@@ -117,25 +117,40 @@ if len(suspicious_indices) > 0:
     final_predictions[suspicious_indices] = l2_preds
 
 # -------------------------------------------------------------
-# 6. DETERMINISTIC RULESET BASELINE (Section 4.4)
+# 6. DETERMINISTIC RULESET BASELINE (Updated Multi-Metric)
 # -------------------------------------------------------------
 print("[+] Executing Deterministic Ruleset Baseline...")
 
-# We extract the 99th percentile of a volumetric feature from the normal training traffic
-# Note: Ensure 'Flow Bytes/s' (or equivalent volumetric feature) is in your original dataset
-target_metric = 'Flow Bytes/s' # Update this string if your column name differs
-if target_metric in X_train.columns:
-    volumetric_threshold = X_train[y_train == 0][target_metric].quantile(0.99)
-    
-    # Rule logic: If the test log exceeds the 99th percentile of normal traffic, flag as anomaly (1)
-    # We map any binary '1' prediction to a general attack class (e.g., assuming any attack is a 1 for baseline comparison)
-    rule_predictions = (X_test[target_metric] > volumetric_threshold).astype(int)
+# Define the category of volumetric features based on your dataset
+volumetric_metrics = [
+    'Flow Bytes/s', 
+    'Flow Packets/s', 
+    'Total Length of Fwd Packets', 
+    'Total Length of Bwd Packets'
+]
+
+# Initialize an array of zeros (normal) for the rule predictions
+rule_predictions = np.zeros(len(X_test), dtype=int)
+
+# Check which metrics actually exist in the dataframe to prevent KeyError
+available_metrics = [m for m in volumetric_metrics if m in X_train.columns]
+
+if available_metrics:
+    print(f"    -> Applying 99th percentile static thresholds for: {available_metrics}")
+    for metric in available_metrics:
+        # Extract the 99th percentile threshold from strictly normal training traffic
+        threshold = X_train[y_train == 0][metric].quantile(0.99)
+        
+        # If any test log exceeds this specific threshold, flag it as an anomaly (1)
+        # The bitwise OR (|) ensures that tripping ANY rule flags the log
+        rule_predictions = rule_predictions | (X_test[metric] > threshold).astype(int)
+        
     rule_binary_truth = (y_test != 0).astype(int)
     
     rule_acc = accuracy_score(rule_binary_truth, rule_predictions)
     rule_f1 = f1_score(rule_binary_truth, rule_predictions, average='macro', zero_division=0)
 else:
-    print(f"[!] Target metric '{target_metric}' not found. Skipping baseline.")
+    print("[!] No volumetric metrics found. Skipping baseline.")
     rule_acc, rule_f1 = 0, 0
 
 # -------------------------------------------------------------
