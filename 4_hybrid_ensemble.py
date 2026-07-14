@@ -68,7 +68,7 @@ X_test_final_scaled = layer1_scaler.transform(X_test_final)
 
 layer1_ocsvm = make_pipeline(
     Nystroem(kernel='rbf', gamma=None, n_components=300, random_state=42),
-    SGDOneClassSVM(nu=0.20, random_state=42)
+    SGDOneClassSVM(nu=0.01, random_state=42) # Changed to 0.01 to match benign-only training
 )
 layer1_ocsvm.fit(X_train_normal_scaled)
 
