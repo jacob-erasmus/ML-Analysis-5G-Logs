@@ -191,14 +191,14 @@ for train_index, val_index in skf.split(X, y):
     print(f"\n--- FOLD {fold_no} COMPLETELY FINISHED ---")
     
     # LEAVE THE BREAK HERE FOR NOW
-    print("\n[!] Safety break initiated. Awaiting Fold 1 Unsupervised verification.")
-    break
+    # print("\n[!] Safety break initiated. Awaiting Fold 1 Unsupervised verification.")
+    #break
 
-    print(f"\n--- FOLD {fold_no} COMPLETELY FINISHED ---")
+   #S print(f"\n--- FOLD {fold_no} COMPLETELY FINISHED ---")
     
     # SAFETY BREAK: Keep this here so we can verify the models run on Fold 1 
     # before we commit your laptop to the full 5-fold loop.
-    print("\n[!] Safety break initiated. Awaiting Fold 1 verification.")
-    break 
+    #print("\n[!] Safety break initiated. Awaiting Fold 1 verification.")
+    #break 
 
     fold_no += 1
