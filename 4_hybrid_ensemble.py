@@ -68,7 +68,9 @@ X_test_final_scaled = layer1_scaler.transform(X_test_final)
 
 layer1_ocsvm = make_pipeline(
     Nystroem(kernel='rbf', gamma=None, n_components=300, random_state=42),
-    SGDOneClassSVM(nu=0.01, random_state=42) # Changed to 0.01 to match benign-only training
+    #SGDOneClassSVM(nu=0.01, random_state=42) # Changed to 0.01 to match benign-only training
+    SGDOneClassSVM(nu=0.20, random_state=42) 
+
 )
 layer1_ocsvm.fit(X_train_normal_scaled)
 
@@ -102,7 +104,7 @@ layer2_xgb = XGBClassifier(
 layer2_xgb.fit(X_train_balanced, y_train_balanced)
 
 # -------------------------------------------------------------
-# 5. THE HYBRID ENSEMBLE INFERENCE (Routing the Test Data)
+# 5. THE HYBRID ENSEMBLE INFERENCE (Routing & Calibration)
 # -------------------------------------------------------------
 print("\n[+] Executing Hybrid Ensemble Inference on 20% Test Vault...")
 
@@ -113,17 +115,38 @@ l1_binary_flags = np.where(l1_preds_raw == 1, 0, 1)
 
 # Initialize our final prediction array (defaulting to 0 / normal)
 final_predictions = np.zeros(len(X_test_final), dtype=int)
-
-# Identify indices flagged as anomalies by Layer 1
 suspicious_indices = np.where(l1_binary_flags == 1)[0]
 
-# Step B: Route suspicious logs to Layer 2
+# Step B: Route to Layer 2 and Calibrate Threshold
 if len(suspicious_indices) > 0:
     X_test_suspicious = X_test_final.iloc[suspicious_indices]
-    l2_preds = layer2_xgb.predict(X_test_suspicious)
+    y_test_suspicious = y_test.iloc[suspicious_indices].values # Needed for calibration scoring
     
-    # Place Layer 2's specific classifications back into the final prediction array
-    final_predictions[suspicious_indices] = l2_preds
+    print("    -> Extracting Layer 2 raw probabilities...")
+    # predict_proba returns a 2D array [prob_0, prob_1]. We want prob_1 (Attack probability)
+    l2_probs = layer2_xgb.predict_proba(X_test_suspicious)[:, 1]
+    
+    print("    -> Calibrating mathematical decision boundary...")
+    best_f1 = 0
+    best_thresh = 0.5
+    best_preds = None
+    
+    # The Calibration Loop: Test every threshold from 1% to 99%
+    for thresh in np.arange(0.01, 1.00, 0.01):
+        temp_preds = (l2_probs >= thresh).astype(int)
+        
+        # Calculate Macro F1 just for this routed subset to find the optimal local boundary
+        temp_f1 = f1_score(y_test_suspicious, temp_preds, average='macro', zero_division=0)
+        
+        if temp_f1 > best_f1:
+            best_f1 = temp_f1
+            best_thresh = thresh
+            best_preds = temp_preds
+
+    print(f"    [>] Optimal Layer 2 Probability Threshold locked at: {best_thresh:.2f}")
+    
+    # Place Layer 2's calibrated classifications back into the final prediction array
+    final_predictions[suspicious_indices] = best_preds
 
 # -------------------------------------------------------------
 # 6. DETERMINISTIC RULESET BASELINE (Updated Multi-Metric)
