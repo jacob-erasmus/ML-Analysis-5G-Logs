@@ -19,7 +19,7 @@ print("==================================================")
 # 1. LOAD AND SAMPLE THE DATA
 # -------------------------------------------------------------
 print("[+] Loading Training Vault...")
-df_train = pd.read_csv("5G_train_80percent.csv")
+df_train = pd.read_csv("logs_80percent.csv")
 
 # Drop the column BEFORE we sample
 X_full = df_train.drop(columns=['LabelEnc'])
@@ -65,14 +65,20 @@ print("    [>] Layer 1 parameters empirically optimized. Skipping automated CV."
 # -------------------------------------------------------------
 print("\n[+] Initiating RandomizedSearchCV for Layer 2 (XGBoost)...")
 
-print("    -> Balancing the 10% sample with SMOTE...")
+print("    -> Balancing the 10% sample with SMOTE (Adaptive Strategy)...")
 class_counts = y_tune.value_counts()
 majority_count = class_counts.max()
 target_minority = int(majority_count * 0.10)
 
-smote_strategy = {cls: (count if count >= target_minority else target_minority) 
-                  for cls, count in class_counts.items() if cls != 0}
-smote_strategy[0] = majority_count 
+# ADAPTIVE SMOTE FIX: 
+# SMOTE requires at least 2 points to draw a synthetic line. 
+# We filter out any zero-day attacks that were reduced to 1 row by the 10% sampling.
+smote_strategy = {}
+for cls, count in class_counts.items():
+    if cls == 0:
+        smote_strategy[cls] = majority_count
+    elif count > 1: # The Safety Check
+        smote_strategy[cls] = count if count >= target_minority else target_minority
 
 smote = SMOTE(sampling_strategy=smote_strategy, k_neighbors=1, random_state=42)
 X_tune_balanced, y_tune_balanced = smote.fit_resample(X_tune_final, y_tune)
