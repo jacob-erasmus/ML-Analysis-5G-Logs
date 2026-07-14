@@ -55,24 +55,26 @@ X_test_final = X_test_ig[final_features]
 print(f"[+] Final 20 Forensic Features Locked for Production.")
 
 # -------------------------------------------------------------
-# 3. TRAINING LAYER 1: UNSUPERVISED (OCSVM Filter)
+# 3. TRAINING LAYER 1: UNSUPERVISED UNION (OCSVM + IF)
 # -------------------------------------------------------------
-print("\n[+] Training Layer 1: Nyström OCSVM Anomaly Filter...")
+print("\n[+] Training Layer 1: OCSVM + Isolation Forest Union...")
 
-# Isolate and scale ONLY normal traffic for Layer 1
 X_train_normal = X_train_final[y_train == 0]
 
 layer1_scaler = StandardScaler()
 X_train_normal_scaled = layer1_scaler.fit_transform(X_train_normal)
 X_test_final_scaled = layer1_scaler.transform(X_test_final)
 
+# Model A: Nyström OCSVM (Distance-based)
 layer1_ocsvm = make_pipeline(
     Nystroem(kernel='rbf', gamma=None, n_components=300, random_state=42),
-    #SGDOneClassSVM(nu=0.01, random_state=42) # Changed to 0.01 to match benign-only training
-    SGDOneClassSVM(nu=0.20, random_state=42) 
-
+    SGDOneClassSVM(nu=0.20, random_state=42)
 )
 layer1_ocsvm.fit(X_train_normal_scaled)
+
+# Model B: Isolation Forest (Tree-based)
+layer1_if = IsolationForest(n_estimators=100, contamination=0.20, random_state=42, n_jobs=-1)
+layer1_if.fit(X_train_normal_scaled)
 
 # -------------------------------------------------------------
 # 4. TRAINING LAYER 2: SUPERVISED (XGBoost Classifier)
@@ -104,13 +106,20 @@ layer2_xgb = XGBClassifier(
 layer2_xgb.fit(X_train_balanced, y_train_balanced)
 
 # -------------------------------------------------------------
-# 5. THE HYBRID ENSEMBLE INFERENCE (Routing & Multi-Class Calibration)
+# 5. THE HYBRID ENSEMBLE INFERENCE (Routing & Calibration)
 # -------------------------------------------------------------
 print("\n[+] Executing Hybrid Ensemble Inference on 20% Test Vault...")
 
-# Step A: Pass everything through Layer 1
-l1_preds_raw = layer1_ocsvm.predict(X_test_final_scaled)
-l1_binary_flags = np.where(l1_preds_raw == 1, 0, 1)
+# Step A: Pass everything through Layer 1 Union
+l1_preds_ocsvm = layer1_ocsvm.predict(X_test_final_scaled)
+l1_preds_if = layer1_if.predict(X_test_final_scaled)
+
+# Map to 0 (Normal) and 1 (Anomaly)
+flags_ocsvm = np.where(l1_preds_ocsvm == 1, 0, 1)
+flags_if = np.where(l1_preds_if == 1, 0, 1)
+
+# LOGICAL OR: If EITHER model flags it, it routes to Layer 2
+l1_binary_flags = flags_ocsvm | flags_if
 
 final_predictions = np.zeros(len(X_test_final), dtype=int)
 suspicious_indices = np.where(l1_binary_flags == 1)[0]
