@@ -23,14 +23,24 @@ print("==================================================")
 # 1. LOAD AND SAMPLE THE DATA
 # -------------------------------------------------------------
 print("[+] Loading Training Vault...")
-df_train = pd.read_csv("logs_80percent.csv")
+df_train = pd.read_csv("5G_train_80percent.csv") # Check filename if needed
 
-# CRITICAL: Sample 10% of the data to make tuning computationally viable
+# Drop the column BEFORE we sample
+X_full = df_train.drop(columns=['LabelEnc'])
+y_full = df_train['LabelEnc']
+
+# CRITICAL: Sample exactly 10% using Scikit-Learn for perfect stratification
 print("[+] Extracting 10% stratified sample for tuning...")
-df_tune = df_train.groupby('LabelEnc', group_keys=False).apply(lambda x: x.sample(frac=0.10, random_state=42))
+from sklearn.model_selection import train_test_split
 
-X_tune = df_tune.drop(columns=['LabelEnc'])
-y_tune = df_tune['LabelEnc']
+# We set test_size=0.10 to grab 10% of the data into X_tune and y_tune.
+# We throw away the 90% (assigned to _) to protect your RAM.
+_, X_tune, _, y_tune = train_test_split(
+    X_full, y_full, 
+    test_size=0.10, 
+    stratify=y_full, 
+    random_state=42
+)
 
 # -------------------------------------------------------------
 # 2. FEATURE SELECTION (On the 10% Sample)
