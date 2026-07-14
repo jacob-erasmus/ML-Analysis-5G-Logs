@@ -75,7 +75,7 @@ layer1_ocsvm.fit(X_train_normal_scaled)
 # -------------------------------------------------------------
 # 4. TRAINING LAYER 2: SUPERVISED (XGBoost Classifier)
 # -------------------------------------------------------------
-print("[+] Training Layer 2: XGBoost Classifier...")
+print("[+] Training Layer 2: Tuned XGBoost Classifier...")
 
 # Apply Dynamic SMOTE to the full 80% training set
 class_counts = y_train.value_counts()
@@ -89,7 +89,16 @@ smote_strategy[0] = majority_count
 smote = SMOTE(sampling_strategy=smote_strategy, k_neighbors=1, random_state=42)
 X_train_balanced, y_train_balanced = smote.fit_resample(X_train_final, y_train)
 
-layer2_xgb = XGBClassifier(eval_metric='mlogloss', random_state=42, n_jobs=-1)
+# THE GOLDEN PARAMETERS (Derived from 10% RandomizedSearchCV)
+layer2_xgb = XGBClassifier(
+    max_depth=13,
+    learning_rate=0.1186,
+    n_estimators=121,
+    subsample=0.8394,
+    eval_metric='mlogloss', 
+    random_state=42, 
+    n_jobs=-1
+)
 layer2_xgb.fit(X_train_balanced, y_train_balanced)
 
 # -------------------------------------------------------------
