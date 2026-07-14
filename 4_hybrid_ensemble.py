@@ -22,12 +22,12 @@ print("==================================================")
 # 1. LOAD THE DATA (Opening the Vaults)
 # -------------------------------------------------------------
 print("[+] Loading 80% Training Vault...")
-df_train = pd.read_csv("5G_train_80percent.csv")
+df_train = pd.read_csv("logs_80percent.csv")
 X_train = df_train.drop(columns=['LabelEnc'])
 y_train = df_train['LabelEnc']
 
 print("[+] Loading 20% Testing Vault (Unseen Data)...")
-df_test = pd.read_csv("logs_20percent_test.csv") # Update filename if needed
+df_test = pd.read_csv("logs_20percent.csv") # Update filename if needed
 X_test = df_test.drop(columns=['LabelEnc'])
 y_test = df_test['LabelEnc']
 
