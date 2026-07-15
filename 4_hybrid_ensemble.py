@@ -15,6 +15,7 @@ from sklearn.preprocessing import PolynomialFeatures
 warnings.filterwarnings("ignore") 
 from sklearn.utils.class_weight import compute_sample_weight
 from sklearn.ensemble import RandomForestClassifier, VotingClassifier
+from imblearn.over_sampling import ADASYN
 
 print("==================================================")
 print("  PHASE 4: HYBRID ENSEMBLE & FORENSIC BENCHMARK   ")
@@ -134,7 +135,7 @@ layer1_ocsvm.fit(X_train_normal_scaled)
 layer1_if = IsolationForest(n_estimators=100, contamination=0.20, random_state=42, n_jobs=-1)
 layer1_if.fit(X_train_normal_scaled)
 
-# -------------------------------------------------------------
+""" # -------------------------------------------------------------
 # 4. TRAINING LAYER 2: SUPERVISED (XGBoost Classifier)
 # -------------------------------------------------------------
 print("[+] Training Layer 2: Tuned XGBoost Classifier...")
@@ -161,8 +162,37 @@ layer2_xgb = XGBClassifier(
     random_state=42, 
     n_jobs=-1
 )
-layer2_xgb.fit(X_train_balanced, y_train_balanced)
+layer2_xgb.fit(X_train_balanced, y_train_balanced) """
 
+# -------------------------------------------------------------
+# 4. TRAINING LAYER 2: ADASYN & TUNED XGBOOST
+# -------------------------------------------------------------
+print("\n[+] Training Layer 2: XGBoost with ADASYN Camouflage-Breaking...")
+
+class_counts = y_train.value_counts()
+majority_count = class_counts.max()
+target_minority = int(majority_count * 0.10)
+
+# The Adaptive Strategy ensures we don't crash on attacks with only 1 row
+adasyn_strategy = {cls: (count if count >= target_minority else target_minority) 
+                  for cls, count in class_counts.items() if cls != 0}
+adasyn_strategy[0] = majority_count 
+
+# ADASYN mathematically targets the hardest-to-learn boundary cases
+adasyn = ADASYN(sampling_strategy=adasyn_strategy, n_neighbors=1, random_state=42)
+X_train_balanced, y_train_balanced = adasyn.fit_resample(X_train_final, y_train)
+
+# The Layer 2 Sniper
+layer2_xgb = XGBClassifier(
+    max_depth=13,
+    learning_rate=0.1186,
+    n_estimators=121,
+    subsample=0.8394,
+    eval_metric='mlogloss', 
+    random_state=42, 
+    n_jobs=-1
+)
+layer2_xgb.fit(X_train_balanced, y_train_balanced)
 # -------------------------------------------------------------
 # 5. THE HYBRID ENSEMBLE INFERENCE (Routing & Calibration)
 # -------------------------------------------------------------
