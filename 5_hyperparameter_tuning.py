@@ -8,6 +8,9 @@ from sklearn.model_selection import train_test_split, RandomizedSearchCV
 from sklearn.metrics import make_scorer, f1_score
 import warnings
 from scipy.stats import uniform, randint
+from sklearn.feature_selection import RFECV
+from sklearn.model_selection import StratifiedKFold
+import matplotlib.pyplot as plt
 
 warnings.filterwarnings("ignore")
 
@@ -35,23 +38,52 @@ _, X_tune, _, y_tune = train_test_split(
 )
 
 # -------------------------------------------------------------
-# 2. FEATURE SELECTION (On the 10% Sample)
+# 2. OPTIMIZED FEATURE SELECTION (IG -> RFECV)
 # -------------------------------------------------------------
-print("\n[+] Re-verifying Global Features (IG -> RFE)...")
+print("\n[+] Executing Global Feature Selection (IG -> RFECV)...")
+
+# Step 2A: Information Gain (Global 50)
 ig_scores = mutual_info_classif(X_tune, y_tune, random_state=42)
 ig_series = pd.Series(ig_scores, index=X_tune.columns)
 top_50_features = ig_series.sort_values(ascending=False).head(50).index.tolist()
 
 X_tune_ig = X_tune[top_50_features]
 
+# Step 2B: RFECV (The Mathematical Optimum)
+print("    -> Executing Recursive Feature Elimination with 3-Fold CV on 10% sample...")
 rf_estimator = RandomForestClassifier(n_estimators=50, max_depth=10, random_state=42, n_jobs=-1)
-rfe = RFE(estimator=rf_estimator, n_features_to_select=20, step=5)
-rfe.fit(X_tune_ig, y_tune)
+cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
 
-final_features = X_tune_ig.columns[rfe.support_].tolist()
-X_tune_final = X_tune_ig[final_features]
-print(f"[+] Final 20 Forensic Features Locked.")
+# Step by 2 to accelerate the loop, enforcing a minimum of 10 features
+rfecv = RFECV(
+    estimator=rf_estimator,
+    step=2, 
+    cv=cv,
+    scoring='f1_macro',
+    min_features_to_select=10,
+    n_jobs=-1
+)
+rfecv.fit(X_tune_ig, y_tune)
 
+optimal_num = rfecv.n_features_
+golden_features = X_tune_ig.columns[rfecv.support_].tolist()
+
+print(f"\n    [>] RFECV Complete. Mathematical optimum found at: {optimal_num} features.")
+print(f"    [>] GOLDEN FEATURE LIST TO COPY TO SCRIPT 4:")
+print(f"        {golden_features}")
+
+# Step 2C: Generate the Ablation Study Graph for Chapter 4
+plt.figure(figsize=(10, 6))
+x_axis = range(10, len(rfecv.cv_results_['mean_test_score']) * 2 + 10, 2)
+plt.plot(x_axis, rfecv.cv_results_['mean_test_score'], marker='o', linestyle='-', color='b')
+plt.title('RFECV: Feature Dimensionality vs. F1-Score')
+plt.xlabel('Number of Features Selected')
+plt.ylabel('Macro F1-Score (Cross-Validation)')
+plt.grid(True)
+plt.tight_layout()
+plt.savefig('rfecv_curve.png')
+plt.close()
+print("    [>] Feature elimination curve saved as 'rfecv_curve.png'.")
 # -------------------------------------------------------------
 # 3. LAYER 1: UNSUPERVISED (OCSVM) JUSTIFICATION
 # -------------------------------------------------------------
