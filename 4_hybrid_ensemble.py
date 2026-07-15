@@ -11,7 +11,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 import warnings
 from sklearn.exceptions import ConvergenceWarning
-
+from sklearn.preprocessing import PolynomialFeatures
 warnings.filterwarnings("ignore") 
 
 print("==================================================")
@@ -53,6 +53,39 @@ final_features = X_train_ig.columns[rfe.support_].tolist()
 X_train_final = X_train_ig[final_features]
 X_test_final = X_test_ig[final_features]
 print(f"[+] Final 20 Forensic Features Locked for Production.")
+
+# -------------------------------------------------------------
+# 2.5 FORENSIC FEATURE ENGINEERING (Upgrade B)
+# -------------------------------------------------------------
+print("\n[+] Executing Forensic Feature Engineering...")
+print("    -> Generating mathematical interactions to break zero-day camouflage.")
+
+# We extract the top 5 most important features from the RFE selection
+top_5_interact = final_features[:5]
+X_train_poly_source = X_train_final[top_5_interact]
+X_test_poly_source = X_test_final[top_5_interact]
+
+# interaction_only=True ensures we only multiply A*B, completely ignoring A^2 to prevent scaling distortion
+poly = PolynomialFeatures(degree=2, interaction_only=True, include_bias=False)
+
+train_interactions = poly.fit_transform(X_train_poly_source)
+test_interactions = poly.transform(X_test_poly_source)
+
+# Extract the new mathematical feature names (e.g., 'Flow Bytes/s Flow Packets/s')
+poly_feature_names = poly.get_feature_names_out(top_5_interact)
+
+df_train_poly = pd.DataFrame(train_interactions, columns=poly_feature_names, index=X_train_final.index)
+df_test_poly = pd.DataFrame(test_interactions, columns=poly_feature_names, index=X_test_final.index)
+
+# Drop the original 5 features from this temporary dataframe so we don't duplicate them
+df_train_poly = df_train_poly.drop(columns=top_5_interact)
+df_test_poly = df_test_poly.drop(columns=top_5_interact)
+
+# Merge the 10 newly engineered dimensions into the master datasets
+X_train_final = pd.concat([X_train_final, df_train_poly], axis=1)
+X_test_final = pd.concat([X_test_final, df_test_poly], axis=1)
+
+print(f"    [>] Engineered {len(df_train_poly.columns)} new dimensional planes. Total features expanded to {X_train_final.shape[1]}.")
 
 # -------------------------------------------------------------
 # 3. TRAINING LAYER 1: UNSUPERVISED UNION (OCSVM + IF)
