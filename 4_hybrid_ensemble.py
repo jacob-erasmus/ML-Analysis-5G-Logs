@@ -55,7 +55,7 @@ X_train_final = X_train_ig[final_features]
 X_test_final = X_test_ig[final_features]
 print(f"[+] Final 20 Forensic Features Locked for Production.")
 
-# -------------------------------------------------------------
+""" # -------------------------------------------------------------
 # 2.5 FORENSIC FEATURE ENGINEERING (Upgrade B)
 # -------------------------------------------------------------
 print("\n[+] Executing Forensic Feature Engineering...")
@@ -87,7 +87,7 @@ X_train_final = pd.concat([X_train_final, df_train_poly], axis=1)
 X_test_final = pd.concat([X_test_final, df_test_poly], axis=1)
 
 print(f"    [>] Engineered {len(df_train_poly.columns)} new dimensional planes. Total features expanded to {X_train_final.shape[1]}.")
-
+ """
 # -------------------------------------------------------------
 # 3. TRAINING LAYER 1: UNSUPERVISED UNION (OCSVM + IF)
 # -------------------------------------------------------------
@@ -110,7 +110,7 @@ layer1_ocsvm.fit(X_train_normal_scaled)
 layer1_if = IsolationForest(n_estimators=100, contamination=0.20, random_state=42, n_jobs=-1)
 layer1_if.fit(X_train_normal_scaled)
 
-""" # -------------------------------------------------------------
+# -------------------------------------------------------------
 # 4. TRAINING LAYER 2: SUPERVISED (XGBoost Classifier)
 # -------------------------------------------------------------
 print("[+] Training Layer 2: Tuned XGBoost Classifier...")
@@ -137,30 +137,7 @@ layer2_xgb = XGBClassifier(
     random_state=42, 
     n_jobs=-1
 )
-layer2_xgb.fit(X_train_balanced, y_train_balanced) """
-
-# -------------------------------------------------------------
-# 4. TRAINING LAYER 2: SUPERVISED (Cost-Sensitive XGBoost)
-# -------------------------------------------------------------
-print("\n[+] Training Layer 2: Tuned XGBoost Classifier...")
-print("    -> Executing Cost-Sensitive Learning (SMOTE removed to preserve 30-D integrity).")
-
-# Calculate dynamic penalty weights for every row based on its class rarity
-sample_weights = compute_sample_weight(class_weight='balanced', y=y_train)
-
-# THE GOLDEN PARAMETERS (Derived from 10% RandomizedSearchCV)
-layer2_xgb = XGBClassifier(
-    max_depth=13,
-    learning_rate=0.1186,
-    n_estimators=121,
-    subsample=0.8394,
-    eval_metric='mlogloss', 
-    random_state=42, 
-    n_jobs=-1
-)
-
-# We pass the raw, un-SMOTEd data directly to XGBoost, injecting the penalty weights
-layer2_xgb.fit(X_train_final, y_train, sample_weight=sample_weights)
+layer2_xgb.fit(X_train_balanced, y_train_balanced)
 
 # -------------------------------------------------------------
 # 5. THE HYBRID ENSEMBLE INFERENCE (Routing & Calibration)
