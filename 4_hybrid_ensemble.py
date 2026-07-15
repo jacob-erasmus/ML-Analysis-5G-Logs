@@ -14,6 +14,7 @@ from sklearn.exceptions import ConvergenceWarning
 from sklearn.preprocessing import PolynomialFeatures
 warnings.filterwarnings("ignore") 
 from sklearn.utils.class_weight import compute_sample_weight
+from sklearn.ensemble import RandomForestClassifier, VotingClassifier
 
 print("==================================================")
 print("  PHASE 4: HYBRID ENSEMBLE & FORENSIC BENCHMARK   ")
@@ -133,7 +134,7 @@ layer1_ocsvm.fit(X_train_normal_scaled)
 layer1_if = IsolationForest(n_estimators=100, contamination=0.20, random_state=42, n_jobs=-1)
 layer1_if.fit(X_train_normal_scaled)
 
-# -------------------------------------------------------------
+""" # -------------------------------------------------------------
 # 4. TRAINING LAYER 2: SUPERVISED (XGBoost Classifier)
 # -------------------------------------------------------------
 print("[+] Training Layer 2: Tuned XGBoost Classifier...")
@@ -160,8 +161,52 @@ layer2_xgb = XGBClassifier(
     random_state=42, 
     n_jobs=-1
 )
-layer2_xgb.fit(X_train_balanced, y_train_balanced)
+layer2_xgb.fit(X_train_balanced, y_train_balanced) """
+# -------------------------------------------------------------
+# 4. TRAINING LAYER 2: THE SUPER-ENSEMBLE (Voting Classifier)
+# -------------------------------------------------------------
+print("\n[+] Training Layer 2: XGBoost + Random Forest Super-Ensemble...")
 
+# Apply Dynamic SMOTE to the training set
+class_counts = y_train.value_counts()
+majority_count = class_counts.max()
+target_minority = int(majority_count * 0.10)
+
+smote_strategy = {cls: (count if count >= target_minority else target_minority) 
+                  for cls, count in class_counts.items() if cls != 0}
+smote_strategy[0] = majority_count 
+
+smote = SMOTE(sampling_strategy=smote_strategy, k_neighbors=1, random_state=42)
+X_train_balanced, y_train_balanced = smote.fit_resample(X_train_final, y_train)
+
+# Model A: Tuned XGBoost (The Precision Sniper)
+layer2_xgb = XGBClassifier(
+    max_depth=13,
+    learning_rate=0.1186,
+    n_estimators=121,
+    subsample=0.8394,
+    eval_metric='mlogloss', 
+    random_state=42, 
+    n_jobs=-1
+)
+
+# Model B: Random Forest (The Stability Anchor)
+layer2_rf = RandomForestClassifier(
+    n_estimators=150,
+    max_depth=15,
+    class_weight='balanced',
+    random_state=42,
+    n_jobs=-1
+)
+
+# The Union: Soft Voting Classifier
+layer2_ensemble = VotingClassifier(
+    estimators=[('xgb', layer2_xgb), ('rf', layer2_rf)],
+    voting='soft',
+    n_jobs=-1
+)
+
+layer2_ensemble.fit(X_train_balanced, y_train_balanced)
 # -------------------------------------------------------------
 # 5. THE HYBRID ENSEMBLE INFERENCE (Routing & Calibration)
 # -------------------------------------------------------------
@@ -188,7 +233,8 @@ if len(suspicious_indices) > 0:
     
     print("    -> Extracting Layer 2 multi-class probabilities...")
     # predict_proba returns a 2D array of shape (n_samples, 15 classes)
-    l2_probs = layer2_xgb.predict_proba(X_test_suspicious)
+    l2_probs = layer2_ensemble.predict_proba(X_test_suspicious)
+    #l2_probs = layer2_xgb.predict_proba(X_test_suspicious)
     
     # The probability of being ANY attack is 1.0 minus the probability of being Normal (Class 0)
     prob_attack = 1.0 - l2_probs[:, 0]

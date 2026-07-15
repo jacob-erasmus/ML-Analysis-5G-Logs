@@ -14,14 +14,9 @@ from sklearn.exceptions import ConvergenceWarning
 from sklearn.preprocessing import PolynomialFeatures
 warnings.filterwarnings("ignore") 
 from sklearn.utils.class_weight import compute_sample_weight
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, Dense
-from tensorflow.keras.callbacks import EarlyStopping
-import tensorflow as tf
 from sklearn.metrics import mean_squared_error
 from sklearn.neural_network import MLPRegressor
-# Suppress TensorFlow logging spam
-tf.get_logger().setLevel('ERROR')
+
 
 print("==================================================")
 print("  PHASE 4: HYBRID ENSEMBLE & FORENSIC BENCHMARK   ")
