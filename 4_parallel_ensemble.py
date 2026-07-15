@@ -231,8 +231,11 @@ he_f1 = f1_score(y_test, final_predictions, average='macro', zero_division=0)
 
 # Calculate Reduction Factor (Rf)
 total_raw_logs = len(X_test)
-flagged_alerts = len(suspicious_indices)
-rf = 1 - (flagged_alerts / total_raw_logs)
+# The new alert count is simply any log that XGBoost finally classifies as > 0
+flagged_alerts = np.count_nonzero(final_predictions)
+
+# Optional: If your script still calculates a Reduction Factor, you can override it
+rf = 0.0 # Layer 1 no longer reduces traffic; it extracts features.
 
 print("--- HYBRID ML ENSEMBLE ---")
 print(f"Accuracy:         {he_acc:.4f}")
