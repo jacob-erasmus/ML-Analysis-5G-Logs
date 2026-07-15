@@ -32,7 +32,7 @@ df_test = pd.read_csv("logs_20percent.csv") # Update filename if needed
 X_test = df_test.drop(columns=['LabelEnc'])
 y_test = df_test['LabelEnc']
 
-# -------------------------------------------------------------
+""" # -------------------------------------------------------------
 # 2. GLOBAL FEATURE SELECTION (Applied to full 80%)
 # -------------------------------------------------------------
 print("\n[+] Executing Global Feature Selection (IG -> RFE)...")
@@ -53,7 +53,30 @@ rfe.fit(X_train_ig, y_train)
 final_features = X_train_ig.columns[rfe.support_].tolist()
 X_train_final = X_train_ig[final_features]
 X_test_final = X_test_ig[final_features]
-print(f"[+] Final 20 Forensic Features Locked for Production.")
+print(f"[+] Final 20 Forensic Features Locked for Production.") """
+
+# -------------------------------------------------------------
+# 2. OPTIMIZED GLOBAL FEATURE SELECTION (RFECV 10-Feature Lock)
+# -------------------------------------------------------------
+print("\n[+] Loading 10 Golden Features derived from Phase 4 RFECV...")
+
+golden_features = [
+    'Total Length of Bwd Packets', 
+    'Bwd Packet Length Mean', 
+    'Total Length of Fwd Packets', 
+    'Flow Bytes/s', 
+    'Flow Duration', 
+    'Fwd Packet Length Mean', 
+    'Flow Packets/s', 
+    'fields.vnf_connection', 
+    'host.name_nrf', 
+    'fields.vnf_weird'
+]
+
+X_train_final = X_train[golden_features]
+X_test_final = X_test[golden_features]
+
+print(f"    [>] Data dimensionality strictly locked to 10 optimal forensic vectors.")
 
 """ # -------------------------------------------------------------
 # 2.5 FORENSIC FEATURE ENGINEERING (Upgrade B)
