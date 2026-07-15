@@ -19,7 +19,7 @@ from tensorflow.keras.layers import Input, Dense
 from tensorflow.keras.callbacks import EarlyStopping
 import tensorflow as tf
 from sklearn.metrics import mean_squared_error
-
+from sklearn.neural_network import MLPRegressor
 # Suppress TensorFlow logging spam
 tf.get_logger().setLevel('ERROR')
 
@@ -120,7 +120,7 @@ X_test_final = pd.concat([X_test_final, df_test_poly], axis=1)
 print(f"    [>] Engineered {len(df_train_poly.columns)} new dimensional planes. Total features expanded to {X_train_final.shape[1]}.")
  """
 # -------------------------------------------------------------
-# 3. TRAINING LAYER 1: DEEP NEURAL AUTOENCODER
+# 3. TRAINING LAYER 1: DEEP NEURAL AUTOENCODER (Scikit-Learn Native)
 # -------------------------------------------------------------
 print("\n[+] Training Layer 1: Deep Neural Autoencoder...")
 
@@ -130,37 +130,24 @@ layer1_scaler = StandardScaler()
 X_train_normal_scaled = layer1_scaler.fit_transform(X_train_normal)
 X_test_final_scaled = layer1_scaler.transform(X_test_final)
 
-# Build the Autoencoder Architecture (10 -> 8 -> 4 -> 8 -> 10)
-input_dim = X_train_normal_scaled.shape[1]
-input_layer = Input(shape=(input_dim,))
-
-# Encoder
-encoded = Dense(8, activation='relu')(input_layer)
-encoded = Dense(4, activation='relu')(encoded) # The Bottleneck
-
-# Decoder
-decoded = Dense(8, activation='relu')(encoded)
-output_layer = Dense(input_dim, activation='linear')(decoded)
-
-autoencoder = Model(inputs=input_layer, outputs=output_layer)
-autoencoder.compile(optimizer='adam', loss='mse')
-
 print("    -> Compressing and learning the normal 5G traffic blueprint...")
-early_stopping = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
-
-# Train strictly on normal traffic. We use validation_split to monitor overfitting.
-autoencoder.fit(
-    X_train_normal_scaled, X_train_normal_scaled,
-    epochs=20,
-    batch_size=256,
-    shuffle=True,
-    validation_split=0.1,
-    callbacks=[early_stopping],
-    verbose=0
+# We trick MLPRegressor into becoming an Autoencoder by setting hidden layers to (8, 4, 8)
+# The '4' acts as the compression bottleneck.
+autoencoder = MLPRegressor(
+    hidden_layer_sizes=(8, 4, 8),
+    activation='relu',
+    solver='adam',
+    max_iter=50,
+    random_state=42,
+    early_stopping=True,
+    validation_fraction=0.1
 )
 
+# We train it to predict its own input
+autoencoder.fit(X_train_normal_scaled, X_train_normal_scaled)
+
 # Calculate the dynamic Reconstruction Error threshold based on normal training data
-train_reconstruction = autoencoder.predict(X_train_normal_scaled, verbose=0)
+train_reconstruction = autoencoder.predict(X_train_normal_scaled)
 train_mse = np.mean(np.power(X_train_normal_scaled - train_reconstruction, 2), axis=1)
 
 # Set the anomaly tripwire at the 99th percentile of normal traffic error
@@ -202,7 +189,7 @@ print("\n[+] Executing Hybrid Ensemble Inference on 20% Test Vault...")
 
 # Step A: Pass everything through the Deep Autoencoder
 print("    -> Calculating Neural Reconstruction Errors...")
-test_reconstruction = autoencoder.predict(X_test_final_scaled, verbose=0)
+test_reconstruction = autoencoder.predict(X_test_final_scaled)
 test_mse = np.mean(np.power(X_test_final_scaled - test_reconstruction, 2), axis=1)
 
 # Any log with an error higher than the threshold is flagged as an anomaly (1)
