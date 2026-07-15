@@ -68,6 +68,8 @@ rfecv.fit(X_tune_ig, y_tune)
 optimal_num = rfecv.n_features_
 golden_features = X_tune_ig.columns[rfecv.support_].tolist()
 
+X_tune_final = X_tune_ig[golden_features]
+
 print(f"\n    [>] RFECV Complete. Mathematical optimum found at: {optimal_num} features.")
 print(f"    [>] GOLDEN FEATURE LIST TO COPY TO SCRIPT 4:")
 print(f"        {golden_features}")
