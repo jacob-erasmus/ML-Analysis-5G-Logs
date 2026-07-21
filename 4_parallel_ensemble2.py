@@ -16,8 +16,8 @@ warnings.filterwarnings("ignore")
 from sklearn.utils.class_weight import compute_sample_weight
 from sklearn.ensemble import RandomForestClassifier, VotingClassifier
 from imblearn.over_sampling import ADASYN
-from sklearn.neighbors import LocalOutlierFactor
-from sklearn.cluster import KMeans
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.model_selection import train_test_split
 
 print("==================================================")
 print("  PHASE 4: HYBRID ENSEMBLE & FORENSIC BENCHMARK   ")
@@ -83,65 +83,61 @@ X_test_final = X_test[golden_features]
 print(f"    [>] Data dimensionality strictly locked to 10 optimal forensic vectors.")
 
 # -------------------------------------------------------------
-# 3. PARALLEL HYBRID ENSEMBLE (Micro-Topology Expansion)
+# 3. PARALLEL HYBRID ENSEMBLE (Meta-Feature Extraction)
 # -------------------------------------------------------------
-print("\n[+] Executing Parallel Hybrid Ensemble (14-D Micro-Topology Architecture)...")
+print("\n[+] Executing Parallel Hybrid Ensemble (Meta-Feature Architecture)...")
 
+# Step 3A: Train Unsupervised Models on Normal Traffic
 X_train_normal = X_train_final[y_train == 0]
 
 layer1_scaler = StandardScaler()
 X_train_normal_scaled = layer1_scaler.fit_transform(X_train_normal)
-X_train_full_scaled = layer1_scaler.transform(X_train_final)
-X_test_full_scaled = layer1_scaler.transform(X_test_final)
 
-print("    -> Training Global Meta-Extractors (OCSVM & Isolation Forest)...")
-layer1_ocsvm = make_pipeline(Nystroem(n_components=300, random_state=42), SGDOneClassSVM(nu=0.20, random_state=42))
+layer1_ocsvm = make_pipeline(
+    Nystroem(kernel='rbf', gamma=None, n_components=300, random_state=42),
+    SGDOneClassSVM(nu=0.20, random_state=42)
+)
 layer1_ocsvm.fit(X_train_normal_scaled)
 
 layer1_if = IsolationForest(n_estimators=100, contamination=0.20, random_state=42, n_jobs=-1)
 layer1_if.fit(X_train_normal_scaled)
 
-print("    -> Training Local Meta-Extractors (LOF & K-Means)...")
-# LOF natively calculates the negative outlier factor (higher is more normal, lower is anomalous)
-# novelty=True allows us to use it for prediction on unseen test data
-layer1_lof = LocalOutlierFactor(n_neighbors=20, novelty=True, n_jobs=-1)
-layer1_lof.fit(X_train_normal_scaled)
+# Step 3B: Extract Continuous Anomaly Scores (The Meta-Features)
+print("    -> Extracting continuous anomaly decision scores for the entire vault...")
+# Scale the full datasets for Layer 1 scoring
+X_train_full_scaled = layer1_scaler.transform(X_train_final)
+X_test_full_scaled = layer1_scaler.transform(X_test_final)
 
-# K-Means forces the data into 10 behavioral neighborhoods
-layer1_kmeans = KMeans(n_clusters=10, random_state=42, n_init='auto')
-layer1_kmeans.fit(X_train_normal_scaled)
-
-print("    -> Fusing Global, Local, and Spatial meta-features into the dataset...")
-# Extract scores for Training Vault
+# decision_function returns a continuous float instead of a hard 1 or 0
 train_scores_ocsvm = layer1_ocsvm.decision_function(X_train_full_scaled)
 train_scores_if = layer1_if.decision_function(X_train_full_scaled)
-train_scores_lof = layer1_lof.decision_function(X_train_full_scaled)
-train_clusters = layer1_kmeans.predict(X_train_full_scaled)
 
+test_scores_ocsvm = layer1_ocsvm.decision_function(X_test_full_scaled)
+test_scores_if = layer1_if.decision_function(X_test_full_scaled)
+
+# Step 3C: Append Meta-Features to the 10 Golden Features
+print("    -> Fusing unsupervised opinions into Layer 2 input dimensions...")
 X_train_meta = X_train_final.copy()
 X_train_meta['OCSVM_Score'] = train_scores_ocsvm
 X_train_meta['IF_Score'] = train_scores_if
-X_train_meta['LOF_Score'] = train_scores_lof
-X_train_meta['Cluster_ID'] = train_clusters
-
-# Extract scores for Testing Vault
-test_scores_ocsvm = layer1_ocsvm.decision_function(X_test_full_scaled)
-test_scores_if = layer1_if.decision_function(X_test_full_scaled)
-test_scores_lof = layer1_lof.decision_function(X_test_full_scaled)
-test_clusters = layer1_kmeans.predict(X_test_full_scaled)
 
 X_test_meta = X_test_final.copy()
 X_test_meta['OCSVM_Score'] = test_scores_ocsvm
 X_test_meta['IF_Score'] = test_scores_if
-X_test_meta['LOF_Score'] = test_scores_lof
-X_test_meta['Cluster_ID'] = test_clusters
-# -------------------------------------------------------------
-# 4. TRAINING LAYER 2: META-AWARE XGBOOST
-# -------------------------------------------------------------
-print("\n[+] Training Layer 2: Meta-Aware XGBoost...")
 
-# Re-engage Adaptive SMOTE on the new 12-Dimensional space
-class_counts = y_train.value_counts()
+# -------------------------------------------------------------
+# 4. TRAINING LAYER 2: ISOTONIC CALIBRATION ENGINE
+# -------------------------------------------------------------
+print("\n[+] Training Layer 2: XGBoost with Isotonic Probability Calibration...")
+
+# Step 4A: Create the True-Distribution Calibration Holdout
+print("    -> Isolating 20% of Training Vault for uncorrupted calibration...")
+X_subtrain, X_calib, y_subtrain, y_calib = train_test_split(
+    X_train_meta, y_train, test_size=0.20, stratify=y_train, random_state=42
+)
+
+# Step 4B: Apply Adaptive SMOTE STRICTLY to the Sub-Train set
+class_counts = y_subtrain.value_counts()
 majority_count = class_counts.max()
 target_minority = int(majority_count * 0.10)
 
@@ -149,9 +145,12 @@ smote_strategy = {cls: (count if count >= target_minority else target_minority)
                   for cls, count in class_counts.items() if cls != 0}
 smote_strategy[0] = majority_count 
 
+print("    -> Balancing Sub-Train dataset with SMOTE...")
 smote = SMOTE(sampling_strategy=smote_strategy, k_neighbors=1, random_state=42)
-X_train_balanced, y_train_balanced = smote.fit_resample(X_train_meta, y_train)
+X_subtrain_balanced, y_subtrain_balanced = smote.fit_resample(X_subtrain, y_subtrain)
 
+# Step 4C: Train the Base XGBoost Sniper
+print("    -> Training Base XGBoost architecture...")
 layer2_xgb = XGBClassifier(
     max_depth=13,
     learning_rate=0.1186,
@@ -161,8 +160,13 @@ layer2_xgb = XGBClassifier(
     random_state=42, 
     n_jobs=-1
 )
-layer2_xgb.fit(X_train_balanced, y_train_balanced)
+layer2_xgb.fit(X_subtrain_balanced, y_subtrain_balanced)
 
+# Step 4D: The Masterstroke - Isotonic Calibration
+print("    -> Executing Isotonic Regression to correct SMOTE probability distortion...")
+# 'prefit' tells it the model is already trained. It just learns the probability mapping.
+calibrated_xgb = CalibratedClassifierCV(layer2_xgb, method='isotonic', cv='prefit')
+calibrated_xgb.fit(X_calib, y_calib)
 """ # -------------------------------------------------------------
 # 5. INFERENCE & CALIBRATION (No Hard Gates)
 # -------------------------------------------------------------
@@ -196,7 +200,8 @@ final_predictions = best_preds """
 print("\n[+] Executing SOC-Constrained Multi-Class Calibration on Test Vault...")
 print("    -> Enforcing strict >= 0.90 Precision boundary for enterprise viability...")
 
-l2_probs = layer2_xgb.predict_proba(X_test_meta)
+# Pass the full parallel test set through the Calibrated Model
+l2_probs = calibrated_xgb.predict_proba(X_test_meta)
 prob_attack = 1.0 - l2_probs[:, 0]
 most_likely_attack = np.argmax(l2_probs[:, 1:], axis=1) + 1
 

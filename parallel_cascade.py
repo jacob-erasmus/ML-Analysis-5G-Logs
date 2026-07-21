@@ -193,54 +193,59 @@ print(f"    [>] Optimal Meta-Aware Probability Threshold locked at: {best_thresh
 # The final predictions are now driven entirely by XGBoost's meta-analysis
 final_predictions = best_preds """
 # -------------------------------------------------------------
-# 5. INFERENCE & SOC-CONSTRAINED CALIBRATION
+# 5. INFERENCE & SOC-CONSTRAINED CALIBRATION (Cascade-Aware)
 # -------------------------------------------------------------
 print("\n[+] Executing SOC-Constrained Multi-Class Calibration on Test Vault...")
 print("    -> Enforcing strict >= 0.90 Precision boundary for enterprise viability...")
 
+# XGBoost only evaluates the surviving logs in the cascade
 l2_probs = layer2_xgb.predict_proba(X_test_cascade)
 prob_attack = 1.0 - l2_probs[:, 0]
 most_likely_attack = np.argmax(l2_probs[:, 1:], axis=1) + 1
 
 best_f1 = 0
 best_thresh = 0.5
-best_preds = None
-best_prec_at_max_f1 = 0
+best_preds_global = None
 
 # The Constrained Search Loop
 for thresh in np.arange(0.01, 1.00, 0.01):
-    temp_preds = np.where(prob_attack >= thresh, most_likely_attack, 0)
+    # 1. Get predictions for the XGBoost cascade subset
+    temp_preds_cascade = np.where(prob_attack >= thresh, most_likely_attack, 0)
     
-    # Calculate both metrics dynamically
-    temp_f1 = f1_score(y_test, temp_preds, average='macro', zero_division=0)
-    temp_prec = precision_score(y_test, temp_preds, average='macro', zero_division=0)
+    # 2. Reconstruct the global array: Default to 0 (Normal), then inject Layer 2's predictions
+    temp_preds_global = np.zeros(len(y_test), dtype=int)
+    temp_preds_global[keep_mask_test] = temp_preds_cascade
     
-    # THE SOC CONSTRAINT: We only update our "best" model IF Precision is >= 90%
+    # 3. Calculate metrics against the FULL original test set
+    temp_f1 = f1_score(y_test, temp_preds_global, average='macro', zero_division=0)
+    temp_prec = precision_score(y_test, temp_preds_global, average='macro', zero_division=0)
+    
+    # THE SOC CONSTRAINT: >= 90% Precision
     if temp_prec >= 0.90 and temp_f1 > best_f1:
         best_f1 = temp_f1
-        best_prec_at_max_f1 = temp_prec
         best_thresh = thresh
-        best_preds = temp_preds
+        best_preds_global = temp_preds_global.copy()
 
-# Failsafe: If no threshold met the 90% constraint, default to standard F1 maximization
-if best_preds is None:
+# Failsafe: Standard F1 Maximization if 90% Precision is impossible
+if best_preds_global is None:
     print("    [!] WARNING: Strict 90% Precision constraint could not be met. Defaulting to standard F1 maximization.")
-    
-    # The actual fallback loop (Standard F1 Maximization)
     for thresh in np.arange(0.01, 1.00, 0.01):
-        temp_preds = np.where(prob_attack >= thresh, most_likely_attack, 0)
-        temp_f1 = f1_score(y_test, temp_preds, average='macro', zero_division=0)
+        temp_preds_cascade = np.where(prob_attack >= thresh, most_likely_attack, 0)
+        
+        temp_preds_global = np.zeros(len(y_test), dtype=int)
+        temp_preds_global[keep_mask_test] = temp_preds_cascade
+        
+        temp_f1 = f1_score(y_test, temp_preds_global, average='macro', zero_division=0)
         
         if temp_f1 > best_f1:
             best_f1 = temp_f1
             best_thresh = thresh
-            best_preds = temp_preds
+            best_preds_global = temp_preds_global.copy()
 
 print(f"    [>] Optimal SOC-Constrained Threshold locked at: {best_thresh:.2f}")
 
-final_predictions = best_preds
-
-# The new alert count metric (since Layer 1 no longer physically drops rows)
+# Lock in the final, reconstructed global predictions
+final_predictions = best_preds_global
 flagged_alerts = np.count_nonzero(final_predictions)
 # -------------------------------------------------------------
 # 6. DETERMINISTIC RULESET BASELINE (Updated Multi-Metric)
