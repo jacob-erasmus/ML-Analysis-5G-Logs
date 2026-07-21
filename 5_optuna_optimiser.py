@@ -21,9 +21,21 @@ print("     PHASE 9: BAYESIAN HYPERPARAMETER SWEEP       ")
 print("==================================================")
 
 # 1. LOAD YOUR DATA HERE (Only the 80% Training Vault is needed)
-# df_train = pd.read_csv(...)
-# X_train_raw = df_train[your_10_golden_features]
-# y_train = df_train['LabelEnc']
+df_train = pd.read_csv("logs_80percent.csv")
+golden_features = [
+    'Total Length of Bwd Packets', 
+    'Bwd Packet Length Mean', 
+    'Total Length of Fwd Packets', 
+    'Flow Bytes/s', 
+    'Flow Duration', 
+    'Fwd Packet Length Mean', 
+    'Flow Packets/s', 
+    'fields.vnf_connection', 
+    'host.name_nrf', 
+    'fields.vnf_weird'
+]
+X_train_raw = df_train[golden_features]
+y_train = df_train['LabelEnc']
 
 # For the sake of the script structure, assuming X_train_raw and y_train are loaded:
 

@@ -97,11 +97,11 @@ X_train_normal_scaled = layer1_scaler.fit_transform(X_train_normal)
 
 layer1_ocsvm = make_pipeline(
     Nystroem(kernel='rbf', gamma=None, n_components=300, random_state=42),
-    SGDOneClassSVM(nu=0.20, random_state=42)
+    SGDOneClassSVM(nu=0.2991, random_state=42)
 )
 layer1_ocsvm.fit(X_train_normal_scaled)
 
-layer1_if = IsolationForest(n_estimators=100, contamination=0.20, random_state=42, n_jobs=-1)
+layer1_if = IsolationForest(n_estimators=100, contamination=0.2458, random_state=42, n_jobs=-1)
 layer1_if.fit(X_train_normal_scaled)
 
 # Step 3B: Extract Continuous Anomaly Scores (The Meta-Features)
@@ -154,10 +154,10 @@ X_subtrain_balanced, y_subtrain_balanced = smote.fit_resample(X_subtrain, y_subt
 # Step 4C: Train the Base XGBoost Sniper
 print("    -> Training Base XGBoost architecture...")
 layer2_xgb = XGBClassifier(
-    max_depth=13,
-    learning_rate=0.1186,
-    n_estimators=121,
-    subsample=0.8394,
+    max_depth=10,
+    learning_rate=0.0644,
+    n_estimators=171,
+    subsample=0.7699,
     eval_metric='mlogloss', 
     random_state=42, 
     n_jobs=-1
