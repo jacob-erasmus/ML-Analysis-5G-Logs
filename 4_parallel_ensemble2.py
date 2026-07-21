@@ -79,34 +79,10 @@ golden_features = [
     'fields.vnf_weird'
 ]
 
-X_train_final = X_train[golden_features].copy()
-X_test_final = X_test[golden_features].copy()
+X_train_final = X_train[golden_features]
+X_test_final = X_test[golden_features]
 
 print(f"    [>] Data dimensionality strictly locked to 10 optimal forensic vectors.")
-
-# -------------------------------------------------------------
-# 2.5. DOMAIN-SPECIFIC FEATURE ENGINEERING (NON-LINEAR CROSSES)
-# -------------------------------------------------------------
-print("\n[+] Injecting Non-Linear Feature Crosses (Domain Ratios)...")
-
-def engineer_network_ratios(df):
-    """
-    Appends explicitly calculated mathematical ratios to bypass 
-    XGBoost's orthogonal split limitations.
-    """
-    df_engineered = df.copy()
-    eps = 1e-5 # Epsilon to prevent division by zero
-    
-    df_engineered['Ratio_Fwd_Bwd_Total_Len'] = df['Total Length of Fwd Packets'] / (df['Total Length of Bwd Packets'] + eps)
-    df_engineered['Ratio_Fwd_Bwd_Mean_Len'] = df['Fwd Packet Length Mean'] / (df['Bwd Packet Length Mean'] + eps)
-    df_engineered['Cross_Velocity_Density'] = df['Flow Bytes/s'] / (df['Flow Packets/s'] + eps)
-        
-    return df_engineered
-
-X_train_final = engineer_network_ratios(X_train_final)
-X_test_final = engineer_network_ratios(X_test_final)
-
-print(f"    [>] Dataset dimensionality expanded to 13 foundational vectors.")
 
 # -------------------------------------------------------------
 # 3. PARALLEL HYBRID ENSEMBLE (Meta-Feature Extraction)
