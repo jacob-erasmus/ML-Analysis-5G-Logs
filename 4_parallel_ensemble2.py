@@ -19,6 +19,7 @@ from imblearn.over_sampling import ADASYN
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.model_selection import train_test_split
 from sklearn.frozen import FrozenEstimator
+from imblearn.over_sampling import BorderlineSMOTE
 
 print("==================================================")
 print("  PHASE 4: HYBRID ENSEMBLE & FORENSIC BENCHMARK   ")
@@ -137,7 +138,7 @@ X_subtrain, X_calib, y_subtrain, y_calib = train_test_split(
     X_train_meta, y_train, test_size=0.20, stratify=y_train, random_state=42
 )
 
-# Step 4B: Apply Adaptive SMOTE STRICTLY to the Sub-Train set
+# Step 4B: Apply Borderline-SMOTE STRICTLY to the Sub-Train set
 class_counts = y_subtrain.value_counts()
 majority_count = class_counts.max()
 target_minority = int(majority_count * 0.10)
@@ -146,10 +147,15 @@ smote_strategy = {cls: (count if count >= target_minority else target_minority)
                   for cls, count in class_counts.items() if cls != 0}
 smote_strategy[0] = majority_count 
 
-print("    -> Balancing Sub-Train dataset with SMOTE...")
-smote = SMOTE(sampling_strategy=smote_strategy, k_neighbors=1, random_state=42)
+print("    -> Balancing Sub-Train dataset with Borderline-SMOTE...")
+# m_neighbors defines how deep into the majority class the algorithm looks to find the borderline
+smote = BorderlineSMOTE(
+    sampling_strategy=smote_strategy, 
+    k_neighbors=1, 
+    m_neighbors=5, 
+    random_state=42
+)
 X_subtrain_balanced, y_subtrain_balanced = smote.fit_resample(X_subtrain, y_subtrain)
-
 # Step 4C: Train the Base XGBoost Sniper
 print("    -> Training Base XGBoost architecture...")
 layer2_xgb = XGBClassifier(
