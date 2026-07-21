@@ -318,3 +318,81 @@ print("\n--- DETERMINISTIC BASELINE ---")
 print(f"Accuracy:         {rule_acc:.4f}")
 print(f"F1-Score (Macro): {rule_f1:.4f}")
 print("==================================================")
+
+# -------------------------------------------------------------
+# 6. OVERFITTING DIAGNOSTICS & STABILITY AUDIT
+# -------------------------------------------------------------
+print("\n==================================================")
+print("      PHASE 8: OVERFITTING & STABILITY AUDIT      ")
+print("==================================================")
+
+from sklearn.model_selection import StratifiedKFold
+import numpy as np
+
+# --- Diagnostic 1: Train vs. Test Gap ---
+print("\n[+] Diagnostic 1: Evaluating Training Vault Metrics (Train vs. Test Gap)...")
+# Extract probabilities for the data XGBoost already learned from
+train_probs = calibrated_xgb.predict_proba(X_train_meta)
+train_prob_attack = 1.0 - train_probs[:, 0]
+train_most_likely = np.argmax(train_probs[:, 1:], axis=1) + 1
+
+# Apply the exact SOC-Constrained Threshold (e.87) to the training data
+train_preds = np.where(train_prob_attack >= best_thresh, train_most_likely, 0)
+
+train_f1 = f1_score(y_train, train_preds, average='macro', zero_division=0)
+train_prec = precision_score(y_train, train_preds, average='macro', zero_division=0)
+
+print(f"    [>] Training F1-Score:   {train_f1:.4f}  |  (Test F1: {best_f1:.4f})")
+print(f"    [>] Training Precision:  {train_prec:.4f}  |  (Test Prec: {best_prec_at_max_f1:.4f})")
+gap = abs(train_f1 - best_f1)
+if gap > 0.10:
+    print(f"    [!] WARNING: Severe Train-Test Gap ({gap:.4f}). Model is likely overfitting.")
+else:
+    print(f"    [>] STATUS: Healthy generalization. No catastrophic overfitting detected.")
+
+# --- Diagnostic 2: Feature Importance Skew ---
+print("\n[+] Diagnostic 2: Feature Importance Audit (Hunting for Artifacts)...")
+# Extract decision weights directly from the frozen Layer 2 XGBoost
+importances = layer2_xgb.feature_importances_
+feature_names = X_train_meta.columns
+
+sorted_idx = np.argsort(importances)[::-1]
+print("    [>] Top 5 Decision Vectors:")
+for i in range(min(5, len(importances))):
+    weight = importances[sorted_idx[i]]
+    print(f"        {i+1}. {feature_names[sorted_idx[i]]:<30} : {weight:.4f}")
+
+if importances[sorted_idx[0]] > 0.50:
+    print("    [!] WARNING: Massive Feature Skew detected. Model is relying on a single artifact.")
+else:
+    print("    [>] STATUS: Healthy weight distribution across dimensions.")
+
+# --- Diagnostic 3: 3-Fold Structural Variance ---
+print("\n[+] Diagnostic 3: 3-Fold Cross-Validation (Structural Hyperparameter Variance)...")
+skf = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+fold_scores = []
+
+# Testing the base architecture's stability across different data slices
+for fold, (train_idx, val_idx) in enumerate(skf.split(X_train_meta, y_train)):
+    X_fold_train, X_fold_val = X_train_meta.iloc[train_idx], X_train_meta.iloc[val_idx]
+    y_fold_train, y_fold_val = y_train.iloc[train_idx], y_train.iloc[val_idx]
+    
+    # Initialize a fresh base model using your exact hyperparameters
+    fold_model = XGBClassifier(
+        max_depth=13, learning_rate=0.1186, n_estimators=121, 
+        subsample=0.8394, eval_metric='mlogloss', random_state=42, n_jobs=-1
+    )
+    fold_model.fit(X_fold_train, y_fold_train)
+    fold_preds = fold_model.predict(X_fold_val)
+    fold_f1 = f1_score(y_fold_val, fold_preds, average='macro', zero_division=0)
+    
+    fold_scores.append(fold_f1)
+    print(f"    [>] Fold {fold+1} Base F1-Score: {fold_f1:.4f}")
+
+variance = np.var(fold_scores)
+print(f"    [>] 3-Fold Variance: {variance:.6f}")
+if variance > 0.005:
+    print("    [!] WARNING: High structural variance. Hyperparameters are brittle.")
+else:
+    print("    [>] STATUS: Robust structural stability confirmed.")
+print("==================================================\n")
