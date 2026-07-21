@@ -18,6 +18,7 @@ from sklearn.ensemble import RandomForestClassifier, VotingClassifier
 from imblearn.over_sampling import ADASYN
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.model_selection import train_test_split
+from sklearn.frozen import FrozenEstimator
 
 print("==================================================")
 print("  PHASE 4: HYBRID ENSEMBLE & FORENSIC BENCHMARK   ")
@@ -164,8 +165,11 @@ layer2_xgb.fit(X_subtrain_balanced, y_subtrain_balanced)
 
 # Step 4D: The Masterstroke - Isotonic Calibration
 print("    -> Executing Isotonic Regression to correct SMOTE probability distortion...")
-# 'prefit' tells it the model is already trained. It just learns the probability mapping.
-calibrated_xgb = CalibratedClassifierCV(layer2_xgb, method='isotonic', cv='prefit')
+# Scikit-Learn 1.6+ requires mathematically freezing the base estimator
+calibrated_xgb = CalibratedClassifierCV(
+    estimator=FrozenEstimator(layer2_xgb), 
+    method='isotonic'
+)
 calibrated_xgb.fit(X_calib, y_calib)
 """ # -------------------------------------------------------------
 # 5. INFERENCE & CALIBRATION (No Hard Gates)
