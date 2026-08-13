@@ -63,9 +63,9 @@ golden_features = [
     'Flow Duration', 
     'Fwd Packet Length Mean', 
     'Flow Packets/s', 
-    'fields.vnf_connection', 
-    'host.name_nrf', 
-    'fields.vnf_weird'
+    'host.name_ausf',
+    'host.name_amf',
+    'zeek.udp_conns_1,728,325,600'
 ]
 
 X_train_final = X_train[golden_features]
@@ -109,12 +109,12 @@ smote_strategy[0] = majority_count
 smote = SMOTE(sampling_strategy=smote_strategy, k_neighbors=1, random_state=42)
 X_train_balanced, y_train_balanced = smote.fit_resample(X_train_final, y_train)
 
-# THE GOLDEN PARAMETERS (Derived from 10% RandomizedSearchCV)
+# THE GOLDEN PARAMETERS (Derived from tuning script RandomizedSearchCV)
 layer2_xgb = XGBClassifier(
     max_depth=13,
     learning_rate=0.1186,
     n_estimators=121,
-    subsample=0.8394,
+    subsample=0.8395,
     eval_metric='mlogloss', 
     random_state=42, 
     n_jobs=-1
