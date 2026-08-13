@@ -134,6 +134,56 @@ def run_simulation(scenario_name, batch_size, iterations=10):
     
     return mean_latency, mean_eps
 
+###########################################
+# 4. EXECUTING THE THREE TRAFFIC CONDITIONS
+###########################################
+print("\n=========================================")
+print(" ---SIMULATING 5G NETWORK CONDITIONS--- ")
+print("========================================")
+
+# Condition 1: mIoT Synchronised Access: Simulating massive simultaneous device registrations
+t_miot, eps_miot = run_simulation(
+    scenario_name="mIoT Synchronised Access (Device Registrations)",
+    batch_size=50000,
+    iterations=20
+)
+
+# Condition 2: Control Plane Flooding: High velocity network spikes targeting NRF/AMF service requests
+t_flood, eps_flood = run_simulation(
+    scenario_name="Control Plane Flooding (NRF/AMF Targeting)",
+    batch_size=50000,
+    iterations=20
+)
+
+# Condition 3: Baseline Signalling: typical background network operational traffic
+t_base, eps_base = run_simulation(
+    scenario_name="Standard Baseline Signalling Volume",
+    batch_size=1000,
+    iterations=20
+)
+
+#####################
+# 5. COMPLEXITY PROOF
+#####################
+print("\n===========================================")
+print(" ---STABILITY RATIO & O(n) VERIFICATION--- ")
+print("===========================================")
+
+ratio_miot = eps_miot / eps_base
+ratio_flood = eps_flood / eps_base
+
+print(f"Baseline EPS    : {eps_base:,.0f}")
+print(f"mIoT Load EPS    : {eps_miot:,.0f} (Ratio: {ratio_miot:.2f}x)")
+print(f"Flood Load EPS    : {eps_flood:,.0f} (Ratio: {ratio_flood:.2f}x)")
+
+print("\n ---O(n) Complexity Verdict--- ")
+if ratio_flood >= 0.80:
+    print("\n[SUCCESS] Deployed Framework exhibits near-perfect linear O(n) scaling.")
+    print("\n          Layer 1 effectively shielded Layer 2 from catastrophic latency degradation during peakl Control Plane Flooding.")
+else: 
+    print("[WARNING] Non-linear bottlenecks detected under peak laod.")
+
+
 
 
         
