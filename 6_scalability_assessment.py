@@ -33,7 +33,7 @@ def optimise_memory(df):
         if df[col].max() <= 127 and df[col].min() >= 128:
             df[col] = df[col].astype('int8')
         else:
-            df[col] = df[col].astupe('int32')
+            df[col] = df[col].astype('int32')
     return df
 
 print("\n[+] Initialising Trace-Driven Stream from Full Dataset...")
@@ -65,7 +65,7 @@ print(f"    [>] Stream Ready: Pool of {X_full_stream.shape[0]:,} 5G logs availab
 #############################
 # 2. LOAD DEPLOYED FRAMEWORK
 #############################
-export_dir = "deployed_models"
+export_dir = "deployed_framework"
 print(f"\n[+] Loading Framework from '{export_dir}/ directory...")
 
 try:
@@ -178,8 +178,8 @@ print(f"Flood Load EPS    : {eps_flood:,.0f} (Ratio: {ratio_flood:.2f}x)")
 
 print("\n ---O(n) Complexity Verdict--- ")
 if ratio_flood >= 0.80:
-    print("\n[SUCCESS] Deployed Framework exhibits near-perfect linear O(n) scaling.")
-    print("\n          Layer 1 effectively shielded Layer 2 from catastrophic latency degradation during peakl Control Plane Flooding.")
+    print("[SUCCESS] Deployed Framework exhibits near-perfect linear O(n) scaling.")
+    print("          Layer 1 effectively shielded Layer 2 from catastrophic latency degradation during peakl Control Plane Flooding.")
 else: 
     print("[WARNING] Non-linear bottlenecks detected under peak laod.")
 
