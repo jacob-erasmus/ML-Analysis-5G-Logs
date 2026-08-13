@@ -178,7 +178,6 @@ if len(suspicious_indices) > 0:
 # -------------------------------------------------------------
 print("[+] Executing Deterministic Ruleset Baseline...")
 
-# Define the category of volumetric features based on your dataset
 volumetric_metrics = [
     'Flow Bytes/s', 
     'Flow Packets/s', 
@@ -186,10 +185,8 @@ volumetric_metrics = [
     'Total Length of Bwd Packets'
 ]
 
-# Initialize an array of zeros (normal) for the rule predictions
 rule_predictions = np.zeros(len(X_test), dtype=int)
 
-# Check which metrics actually exist in the dataframe to prevent KeyError
 available_metrics = [m for m in volumetric_metrics if m in X_train.columns]
 
 if available_metrics:
@@ -197,7 +194,6 @@ if available_metrics:
     for metric in available_metrics:
         # Extract the 99th percentile threshold from strictly normal training traffic
         threshold = X_train[y_train == 0][metric].quantile(0.99)
-        
         # If any test log exceeds this specific threshold, flag it as an anomaly (1)
         # The bitwise OR (|) ensures that tripping ANY rule flags the log
         rule_predictions = rule_predictions | (X_test[metric] > threshold).astype(int)
