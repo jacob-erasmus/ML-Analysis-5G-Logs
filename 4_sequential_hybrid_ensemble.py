@@ -22,40 +22,33 @@ print("  PHASE 4: HYBRID ENSEMBLE & FORENSIC BENCHMARK   ")
 print("==================================================")
 
 # -------------------------------------------------------------
-# 1. LOAD THE DATA (Opening the Vaults)
+# 1. LOAD & DOWNCAST DATA (Methodology Sec 4.2.1)
 # -------------------------------------------------------------
-print("[+] Loading 80% Training Vault...")
+def optimize_memory(df):
+    """Re-applies Sec 4.2.1 downcasting lost during CSV export."""
+    float_cols = df.select_dtypes(include=['float64']).columns
+    df[float_cols] = df[float_cols].astype('float32')
+    
+    int_cols = df.select_dtypes(include=['int64']).columns
+    for col in int_cols:
+        if df[col].max() <= 127 and df[col].min() >= -128:
+            df[col] = df[col].astype('int8')
+        else:
+            df[col] = df[col].astype('int32')
+    return df
+
+print("[+] Loading and Optimizing 80% Training Vault...")
 df_train = pd.read_csv("logs_80percent.csv")
+df_train = optimize_memory(df_train)
 X_train = df_train.drop(columns=['LabelEnc'])
 y_train = df_train['LabelEnc']
 
-print("[+] Loading 20% Testing Vault (Unseen Data)...")
+print("[+] Loading and Optimizing 20% Testing Vault (Unseen Data)...")
 df_test = pd.read_csv("logs_20percent.csv") 
+df_test = optimize_memory(df_test)
 X_test = df_test.drop(columns=['LabelEnc'])
 y_test = df_test['LabelEnc']
 
-""" # -------------------------------------------------------------
-# 2. GLOBAL FEATURE SELECTION (Applied to full 80%)
-# -------------------------------------------------------------
-print("\n[+] Executing Global Feature Selection (IG -> RFE)...")
-
-# A. Information Gain
-ig_scores = mutual_info_classif(X_train, y_train, random_state=42)
-ig_series = pd.Series(ig_scores, index=X_train.columns)
-top_50_features = ig_series.sort_values(ascending=False).head(50).index.tolist()
-
-X_train_ig = X_train[top_50_features]
-X_test_ig = X_test[top_50_features]
-
-# B. Recursive Feature Elimination
-rf_estimator = RandomForestClassifier(n_estimators=50, max_depth=10, random_state=42, n_jobs=-1)
-rfe = RFE(estimator=rf_estimator, n_features_to_select=20, step=5)
-rfe.fit(X_train_ig, y_train)
-
-final_features = X_train_ig.columns[rfe.support_].tolist()
-X_train_final = X_train_ig[final_features]
-X_test_final = X_test_ig[final_features]
-print(f"[+] Final 20 Forensic Features Locked for Production.") """
 
 # -------------------------------------------------------------
 # 2. OPTIMIZED GLOBAL FEATURE SELECTION (RFECV 10-Feature Lock)
