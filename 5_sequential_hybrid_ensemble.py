@@ -18,12 +18,12 @@ from sklearn.ensemble import RandomForestClassifier, VotingClassifier
 from imblearn.over_sampling import ADASYN
 
 print("==================================================")
-print("  PHASE 4: HYBRID ENSEMBLE & FORENSIC BENCHMARK   ")
+print("  HYBRID ENSEMBLE & FORENSIC BENCHMARK   ")
 print("==================================================")
 
-# -------------------------------------------------------------
+#################################################
 # 1. LOAD & DOWNCAST DATA (Methodology Sec 4.2.1)
-# -------------------------------------------------------------
+#################################################
 def optimize_memory(df):
     """Re-applies Sec 4.2.1 downcasting lost during CSV export."""
     float_cols = df.select_dtypes(include=['float64']).columns
@@ -236,7 +236,18 @@ print(f"Accuracy:         {rule_acc:.4f}")
 print(f"F1-Score (Macro): {rule_f1:.4f}")
 print("==================================================")
 
-### Results:
+##############################
+# 8. EXPORT DEPLOYED FRAMEWORK 
+##############################
+import joblib
+import os
+export_dir = "deployed_framework"
+print("\n[+] Exporting Hybrid Ensemble Model for Deployed Framework which will be used for Scalability Validation to '{export_dir}/' directory...")
+joblib.dump(layer1_scaler, os.path.join(export_dir, 'seq_layer1_scaler.pkl'))
+joblib.dump(layer1_ocsvm, os.path.join(export_dir, 'seq_layer1_ocsvm.pkl'))
+joblib.dump(layer2_xgb, os.path.join(export_dir, 'seq_layer2_xgb.pkl'))
+print("     [>] Scaler, Layer 1, and Layer 2 succuessfully saved to disk.")
+### Results for reference:
 """ ==================================================
            FINAL BENCHMARKING RESULTS             
 ==================================================

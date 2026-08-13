@@ -108,17 +108,17 @@ plt.tight_layout()
 plt.savefig('rfe_curve.png')
 plt.close()
 print("    [>] Feature elimination curve saved as 'rfe_curve.png'.")
-# -------------------------------------------------------------
+##############################################################
 # 3. LAYER 1: UNSUPERVISED (OCSVM) JUSTIFICATION (section 4.3)
-# -------------------------------------------------------------
+##############################################################
 print("\n[+] Layer 1 (OCSVM) Parameter Evaluation...")
 print("    -> 'nu' parameter locked at 0.20 (Derived mathematically from EDA 19.7% anomaly rate).")
 print("    -> 'n_components' locked at 300 (Hardware/Time-Complexity ceiling).")
 print("    [>] Layer 1 parameters empirically optimised. Skipping automated CV.")
 
-# ------------------------------------------------------
+#######################################################
 # 4. TUNE LAYER 2: SUPERVISED HYPERPARAMETERS (XGBoost)
-# ------------------------------------------------------
+#######################################################
 print("\n[+] Initiating RandomizedSearchCV for Layer 2 (XGBoost)...")
 
 # Define target minority threshold for SMOTE based on the full dataset

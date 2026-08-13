@@ -1,0 +1,139 @@
+"""
+6_scalability_assessment.py
+Author: Jacob Erasmus
+Project: UP Honours Research
+Purpose: Executes the operational scalability assessment. Simulates variable velocity 5G network conditions to measure throughput (EPS),
+         inference latency (t), and stability.
+Alignment with Methodology: Section 4.5
+"""
+
+import pandas as pd
+import numpy as np
+import time
+import joblib
+import sys
+import os
+import warnings
+warnings.filterwarnings("ignore")
+
+print("============================================")
+print(" --- OPERATIONAL SCALABILITY ASSESSMENT --- ")
+print("============================================")
+
+#############################################
+# 1. TRACE-DRIVEN STREAM: LOAD FULL DATASET
+#############################################
+def optimise_memory(df):
+    """Executes the Memory Optimisation and Downcasting Block."""
+    float_cols = df.select_dtypes(include=['float64']).columns
+    df[float_cols] = df[float_cols].astype('float32')
+
+    int_cols = df.select_dtypes(include=['int64']).columns
+    for col in int_cols:
+        if df[col].max() <= 127 and df[col].min() >= 128:
+            df[col] = df[col].astype('int8')
+        else:
+            df[col] = df[col].astupe('int32')
+    return df
+
+print("\n[+] Initialising Trace-Driven Stream from Full Dataset...")
+try:
+    # pulling the entire logs.csv file
+    df_full = pd.read_csv("logs.csv", low_memory=False)
+    df_full = optimise_memory(df_full)
+except FileNotFoundError:
+    print("     [!] ERROR: 'logs.csv' not found in the root directory.")
+    sys.exit()
+
+# Add 10 Golden Features
+golden_features = [
+    'Total Length of Bwd Packets', 
+        'Bwd Packet Length Mean', 
+        'Total Length of Fwd Packets', 
+        'Flow Bytes/s', 
+        'Flow Duration', 
+        'Fwd Packet Length Mean', 
+        'Flow Packets/s', 
+        'host.name_ausf',
+        'host.name_amf',
+        'zeek.udp_conns_1,728,325,600'
+]
+
+X_full_stream = df_full[golden_features]
+print(f"    [>] Stream Ready: Pool of {X_full_stream.shape[0]:,} 5G logs available.")
+
+#############################
+# 2. LOAD DEPLOYED FRAMEWORK
+#############################
+export_dir = "deployed_models"
+print(f"\n[+] Loading Framework from '{export_dir}/ directory...")
+
+try:
+    layer1_scaler = joblib.load(os.path.join(export_dir, 'seq_layer1_scaler.pkl'))
+    layer1_ocsvm = joblib.load(os.path.join(export_dir, 'seq_layer1_ocsvm.pkl'))
+    layer2_xgb = joblib.load(os.path.join(export_dir, 'seq_layer2_xgb.pkl'))
+    print("     [>] Scaler, Layer 1 (OCSVM), and Layer 2 (XGBoost) successfully loaded.")
+except FileNotFoundError:
+    print(f"    [!] ERROR: Model files not found in '{export_dir}/'.")
+    print("     Please run '5_sequential_ensemble.py' first to generate the .pkl files.")
+    sys.exit()
+
+################################################
+# 3. TRACE-DRIVEN SIMULATION ENGINE (Section 4.5)
+################################################
+def run_simulation(scenario_name, batch_size, iterations=10):
+    """
+    Simulates streaming ingestion from the 5G network.
+    Tests the precise hardware latency of the deployed framework.
+    """
+    print(f"\n[+] Executing Scenario: {scenario_name}")
+    print(f"    -> Streaming Velocity: {batch_size} logs per physical buffer.")
+
+    latencies = []
+    l1_reductions = []
+
+    for i in range(iterations):
+        # Extract a random, unsorted batch of raw traffic from the dataset
+        batch_df = X_full_stream.sample(n=batch_size, replace=True, random_state=42+i)
+
+        ################################
+        # START INFERENCE HARDWARE CLOCK
+        ################################
+        start_time = time.perf_counter()
+
+        # Layer 1: Ingestion & Triage
+        batch_scaled = layer1_scaler.transform(batch_df)
+        l1_preds = layer1_ocsvm.predict(batch_scaled)
+
+        # Convert sklearn outputs (1 = inlier, -1 = outlier) to binary flags
+        flags_ocsvm = np.where(l1_preds == 1, 0, 1)
+        suspicious_indices = np.where(flags_ocsvm == 1)[0]
+
+        # Layer 2: Deep Inspection (Executed if layer 1 forwards traffic)
+        if len(suspicious_indices) > 0:
+            batch_suspicious = batch_df.iloc[suspicious_indices]
+            _ = layer2_xgb.predict(batch_suspicious)
+
+        ###############################
+        # STOP INFERENCE HARDWARE CLOCK
+        ###############################
+        end_time = time.perf_counter()
+
+        cycle_latency = end_time - start_time
+        latencies.append(cycle_latency)
+        l1_reductions.append(len(suspicious_indices))
+
+    # Calculate Core Metrics
+    mean_latency = np.mean(latencies)
+    mean_eps = batch_size / mean_latency
+    avg_forwarded = np.mean(l1_reductions)
+
+    print(f"    [>] Mean Inference Latency (t) : {mean_latency:.4f} seconds")
+    print(f"    [>] Throughput (EPS) : {mean_eps:.0f} events per second")
+    print(f"    [>] Avg L1 Forwarding Load : {avg_forwarded:,.0f} logs (Protects L2 from {batch_size - avg_forwarded:,.0f} logs)")
+    
+    return mean_latency, mean_eps
+
+
+
+        
