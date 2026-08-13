@@ -74,9 +74,9 @@ golden_features = [
     'Flow Duration', 
     'Fwd Packet Length Mean', 
     'Flow Packets/s', 
-    'fields.vnf_connection', 
-    'host.name_nrf', 
-    'fields.vnf_weird'
+    'host.name_ausf', 
+    'host.name_amf', 
+    'zeek.udp_conns_1,728,325,600'
 ]
 
 X_train_final = X_train[golden_features]
@@ -157,7 +157,7 @@ layer2_xgb = XGBClassifier(
     max_depth=13,
     learning_rate=0.1186,
     n_estimators=121,
-    subsample=0.8394,
+    subsample=0.8395,
     eval_metric='mlogloss', 
     random_state=42, 
     n_jobs=-1
