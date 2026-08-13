@@ -30,7 +30,7 @@ X_train = df_train.drop(columns=['LabelEnc'])
 y_train = df_train['LabelEnc']
 
 print("[+] Loading 20% Testing Vault (Unseen Data)...")
-df_test = pd.read_csv("logs_20percent.csv") # Update filename if needed
+df_test = pd.read_csv("logs_20percent.csv") 
 X_test = df_test.drop(columns=['LabelEnc'])
 y_test = df_test['LabelEnc']
 
@@ -80,60 +80,24 @@ X_test_final = X_test[golden_features]
 
 print(f"    [>] Data dimensionality strictly locked to 10 optimal forensic vectors.")
 
-""" # -------------------------------------------------------------
-# 2.5 FORENSIC FEATURE ENGINEERING (Upgrade B)
 # -------------------------------------------------------------
-print("\n[+] Executing Forensic Feature Engineering...")
-print("    -> Generating mathematical interactions to break zero-day camouflage.")
-
-# We extract the top 5 most important features from the RFE selection
-top_5_interact = final_features[:5]
-X_train_poly_source = X_train_final[top_5_interact]
-X_test_poly_source = X_test_final[top_5_interact]
-
-# interaction_only=True ensures we only multiply A*B, completely ignoring A^2 to prevent scaling distortion
-poly = PolynomialFeatures(degree=2, interaction_only=True, include_bias=False)
-
-train_interactions = poly.fit_transform(X_train_poly_source)
-test_interactions = poly.transform(X_test_poly_source)
-
-# Extract the new mathematical feature names (e.g., 'Flow Bytes/s Flow Packets/s')
-poly_feature_names = poly.get_feature_names_out(top_5_interact)
-
-df_train_poly = pd.DataFrame(train_interactions, columns=poly_feature_names, index=X_train_final.index)
-df_test_poly = pd.DataFrame(test_interactions, columns=poly_feature_names, index=X_test_final.index)
-
-# Drop the original 5 features from this temporary dataframe so we don't duplicate them
-df_train_poly = df_train_poly.drop(columns=top_5_interact)
-df_test_poly = df_test_poly.drop(columns=top_5_interact)
-
-# Merge the 10 newly engineered dimensions into the master datasets
-X_train_final = pd.concat([X_train_final, df_train_poly], axis=1)
-X_test_final = pd.concat([X_test_final, df_test_poly], axis=1)
-
-print(f"    [>] Engineered {len(df_train_poly.columns)} new dimensional planes. Total features expanded to {X_train_final.shape[1]}.")
- """
+# 3. TRAINING LAYER 1: UNSUPERVISED TRIAGE (OCSVM)
 # -------------------------------------------------------------
-# 3. TRAINING LAYER 1: UNSUPERVISED UNION (OCSVM + IF)
-# -------------------------------------------------------------
-print("\n[+] Training Layer 1: OCSVM + Isolation Forest Union...")
+print("\n[+] Training Layer 1: OCSVM (Superior Unsupervised Model)")
 
+# Trained strictly on normal traffic to learn the baseline distribution of benign logs
 X_train_normal = X_train_final[y_train == 0]
 
 layer1_scaler = StandardScaler()
 X_train_normal_scaled = layer1_scaler.fit_transform(X_train_normal)
 X_test_final_scaled = layer1_scaler.transform(X_test_final)
 
-# Model A: Nyström OCSVM (Distance-based)
+# Model: Nyström OCSVM (Distance-based)
 layer1_ocsvm = make_pipeline(
     Nystroem(kernel='rbf', gamma=None, n_components=300, random_state=42),
     SGDOneClassSVM(nu=0.20, random_state=42)
 )
 layer1_ocsvm.fit(X_train_normal_scaled)
-
-# Model B: Isolation Forest (Tree-based)
-layer1_if = IsolationForest(n_estimators=100, contamination=0.20, random_state=42, n_jobs=-1)
-layer1_if.fit(X_train_normal_scaled)
 
 # -------------------------------------------------------------
 # 4. TRAINING LAYER 2: SUPERVISED (XGBoost Classifier)
@@ -165,23 +129,19 @@ layer2_xgb = XGBClassifier(
 layer2_xgb.fit(X_train_balanced, y_train_balanced)
 
 # -------------------------------------------------------------
-# 5. THE HYBRID ENSEMBLE INFERENCE (Routing & Calibration)
+# 5. THE HYBRID ENSEMBLE INFERENCE (Sequential Triage Routing)
 # -------------------------------------------------------------
-print("\n[+] Executing Hybrid Ensemble Inference on 20% Test Vault...")
+print("\n[+] Executing Sequential Hybrid Ensemble Inference on 20% Test Vault...")
 
-# Step A: Pass everything through Layer 1 Union
+# Step A: Pass everything through Layer 1 (OSCVM)
 l1_preds_ocsvm = layer1_ocsvm.predict(X_test_final_scaled)
-l1_preds_if = layer1_if.predict(X_test_final_scaled)
 
 # Map to 0 (Normal) and 1 (Anomaly)
 flags_ocsvm = np.where(l1_preds_ocsvm == 1, 0, 1)
-flags_if = np.where(l1_preds_if == 1, 0, 1)
 
-# LOGICAL OR: If EITHER model flags it, it routes to Layer 2
-l1_binary_flags = flags_ocsvm | flags_if
 
 final_predictions = np.zeros(len(X_test_final), dtype=int)
-suspicious_indices = np.where(l1_binary_flags == 1)[0]
+suspicious_indices = np.where(flags_ocsvm == 1)[0]
 
 # Step B: Route to Layer 2
 if len(suspicious_indices) > 0:
@@ -287,17 +247,16 @@ print(f"Accuracy:         {rule_acc:.4f}")
 print(f"F1-Score (Macro): {rule_f1:.4f}")
 print("==================================================")
 
-
 ### Results:
 """ ==================================================
            FINAL BENCHMARKING RESULTS             
 ==================================================
 --- HYBRID ML ENSEMBLE ---
-Accuracy:         0.8949
-Precision:        0.9186
-Recall:           0.4295
-F1-Score (Macro): 0.4951
-Reduction Factor: 0.6949 (Goal: ~0.99)
+Accuracy:         0.8943
+Precision:        0.8518
+Recall:           0.4142
+F1-Score (Macro): 0.4719
+Reduction Factor: 0.7330 (Goal: ~0.99)
 
 --- DETERMINISTIC BASELINE ---
 Accuracy:         0.7803
