@@ -1,7 +1,13 @@
+"""
+5_sequential_hybrid_ensemble.py
+Author: Jacob Erasmus
+Project: UP Honours Research
+Purpose: Hybrid ensemble that executes the winning supervised and unsupervised models, OCSVM filters benign traffic and forwards suspected anomalies to XGBoost.
+Output: Serialises and exports the to 'deployed_framework' which will be used for the Scalability Assesment.
+"""
+
 import pandas as pd
 import numpy as np
-from sklearn.feature_selection import mutual_info_classif, RFE
-from sklearn.ensemble import RandomForestClassifier, IsolationForest
 from xgboost import XGBClassifier
 from imblearn.over_sampling import SMOTE
 from sklearn.preprocessing import StandardScaler
@@ -10,15 +16,10 @@ from sklearn.linear_model import SGDOneClassSVM
 from sklearn.pipeline import make_pipeline
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 import warnings
-from sklearn.exceptions import ConvergenceWarning
-from sklearn.preprocessing import PolynomialFeatures
 warnings.filterwarnings("ignore") 
-from sklearn.utils.class_weight import compute_sample_weight
-from sklearn.ensemble import RandomForestClassifier, VotingClassifier
-from imblearn.over_sampling import ADASYN
 
 print("==================================================")
-print("  HYBRID ENSEMBLE & FORENSIC BENCHMARK   ")
+print("  HYBRID ENSEMBLE   ")
 print("==================================================")
 
 #################################################
@@ -50,10 +51,10 @@ X_test = df_test.drop(columns=['LabelEnc'])
 y_test = df_test['LabelEnc']
 
 
-# -------------------------------------------------------------
-# 2. OPTIMIZED GLOBAL FEATURE SELECTION (RFECV 10-Feature Lock)
-# -------------------------------------------------------------
-print("\n[+] Loading 10 Golden Features derived from Phase 4 RFECV...")
+########################################
+# 2. OPTIMIZED GLOBAL FEATURE SELECTION
+########################################
+print("\n[+] Loading 10 Golden Features derived from tuning script...")
 
 golden_features = [
     'Total Length of Bwd Packets', 
@@ -73,9 +74,9 @@ X_test_final = X_test[golden_features]
 
 print(f"    [>] Data dimensionality strictly locked to 10 optimal forensic vectors.")
 
-# -------------------------------------------------------------
+##################################################
 # 3. TRAINING LAYER 1: UNSUPERVISED TRIAGE (OCSVM)
-# -------------------------------------------------------------
+##################################################
 print("\n[+] Training Layer 1: OCSVM (Superior Unsupervised Model)")
 
 # Trained strictly on normal traffic to learn the baseline distribution of benign logs
@@ -92,9 +93,9 @@ layer1_ocsvm = make_pipeline(
 )
 layer1_ocsvm.fit(X_train_normal_scaled)
 
-# -------------------------------------------------------------
+######################################################
 # 4. TRAINING LAYER 2: SUPERVISED (XGBoost Classifier)
-# -------------------------------------------------------------
+######################################################
 print("[+] Training Layer 2: Tuned XGBoost Classifier...")
 
 # Apply Dynamic SMOTE to the full 80% training set
@@ -121,9 +122,9 @@ layer2_xgb = XGBClassifier(
 )
 layer2_xgb.fit(X_train_balanced, y_train_balanced)
 
-# -------------------------------------------------------------
+##############################################################
 # 5. THE HYBRID ENSEMBLE INFERENCE (Sequential Triage Routing)
-# -------------------------------------------------------------
+##############################################################
 print("\n[+] Executing Sequential Hybrid Ensemble Inference on 20% Test Vault...")
 
 # Step A: Pass everything through Layer 1 (OSCVM)
@@ -140,15 +141,13 @@ suspicious_indices = np.where(flags_ocsvm == 1)[0]
 if len(suspicious_indices) > 0:
     X_test_suspicious = X_test_final.iloc[suspicious_indices]
     y_test_suspicious = y_test.iloc[suspicious_indices].values 
-    
-    print("    -> Extracting Layer 2 multi-class probabilities...")
+    print(f"    -> Layer 1 Triage Complete. Forwarding {len(suspicious_indices):,} suspicious logs to Layer 2...")
+
     # predict_proba returns a 2D array of shape (n_samples, 15 classes)
     l2_probs = layer2_xgb.predict_proba(X_test_suspicious)
-    
     # The probability of being ANY attack is 1.0 minus the probability of being Normal (Class 0)
     prob_attack = 1.0 - l2_probs[:, 0]
-    
-    # Identify the specific zero-day attack by finding the max probability among classes 1-14.
+    # Identify the specific zero-day attack by finding the max probability among classes.
     # We add 1 because slicing [:, 1:] shifts the index (Index 0 becomes Class 1)
     most_likely_attack = np.argmax(l2_probs[:, 1:], axis=1) + 1
     
@@ -156,7 +155,8 @@ if len(suspicious_indices) > 0:
     best_f1 = 0
     best_thresh = 0.5
     best_preds = None
-    
+
+    # Maximising F1
     for thresh in np.arange(0.01, 1.00, 0.01):
         # If the threat probability exceeds the threshold, assign the specific attack class.
         # Otherwise, assign it back to 0 (Normal).
@@ -173,9 +173,9 @@ if len(suspicious_indices) > 0:
     
     final_predictions[suspicious_indices] = best_preds
 
-# -------------------------------------------------------------
-# 6. DETERMINISTIC RULESET BASELINE (Updated Multi-Metric)
-# -------------------------------------------------------------
+####################################
+# 6. DETERMINISTIC RULESET BASELINE
+####################################
 print("[+] Executing Deterministic Ruleset Baseline...")
 
 volumetric_metrics = [
@@ -199,16 +199,15 @@ if available_metrics:
         rule_predictions = rule_predictions | (X_test[metric] > threshold).astype(int)
         
     rule_binary_truth = (y_test != 0).astype(int)
-    
     rule_acc = accuracy_score(rule_binary_truth, rule_predictions)
     rule_f1 = f1_score(rule_binary_truth, rule_predictions, average='macro', zero_division=0)
 else:
     print("[!] No volumetric metrics found. Skipping baseline.")
     rule_acc, rule_f1 = 0, 0
 
-# -------------------------------------------------------------
+##################################
 # 7. FORENSIC BENCHMARKING RESULTS
-# -------------------------------------------------------------
+##################################
 print("\n==================================================")
 print("           FINAL BENCHMARKING RESULTS             ")
 print("==================================================")
@@ -247,6 +246,7 @@ joblib.dump(layer1_scaler, os.path.join(export_dir, 'seq_layer1_scaler.pkl'))
 joblib.dump(layer1_ocsvm, os.path.join(export_dir, 'seq_layer1_ocsvm.pkl'))
 joblib.dump(layer2_xgb, os.path.join(export_dir, 'seq_layer2_xgb.pkl'))
 print("     [>] Scaler, Layer 1, and Layer 2 succuessfully saved to disk.")
+
 ### Results for reference:
 """ ==================================================
            FINAL BENCHMARKING RESULTS             
