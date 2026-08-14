@@ -287,8 +287,28 @@ print(f"Accuracy:         {rule_acc:.4f}")
 print(f"F1-Score (Macro): {rule_f1:.4f}")
 print("==================================================")
 
+##############################
+# 9. EXPORT DEPLOYED FRAMEWORK 
+##############################
+import joblib
+import os
+export_dir = "alt_deployed_framework"
+print("\n[+] Exporting Hybrid Ensemble Model for Deployed Framework which will be used for Scalability Validation to '{export_dir}/' directory...")
+joblib.dump(layer1_scaler, os.path.join(export_dir, 'p_layer1_scaler.pkl'))
+joblib.dump(layer1_ocsvm, os.path.join(export_dir, 'p_layer1_ocsvm.pkl'))
+joblib.dump(layer1_if, os.path.join(export_dir, 'p_layer1_if.pkl'))
+joblib.dump(calibrated_xgb, os.path.join(export_dir, 'p_layer2_xgb_calibrated.pkl'))
+with open(os.path.join(export_dir, 'p_threshold.txt'), 'w') as f:
+    f.writes(str(best_thresh))
+print("     [>] Scaler, Layer 1, and Layer 2 and best threshold succuessfully saved to disk.")
+
+
+
+
+
+""" 
 ##############################################
-# 9. OVERFITTING DIAGNOSTICS & STABILITY AUDIT
+# 10. OVERFITTING DIAGNOSTICS & STABILITY AUDIT
 ##############################################
 print("\n==================================================")
 print("      OVERFITTING & STABILITY AUDIT      ")
@@ -357,4 +377,4 @@ if variance > 0.005:
     print("    [!] WARNING: High structural variance. Hyperparameters are brittle.")
 else:
     print("    [>] STATUS: Robust structural stability confirmed.")
-print("==================================================\n")
+print("==================================================\n") """
