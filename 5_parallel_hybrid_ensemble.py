@@ -25,6 +25,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 import warnings
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.model_selection import train_test_split, StratifiedKFold
+from sklearn.frozen import FrozenEstimator
 
 warnings.filterwarnings("ignore") 
 
@@ -171,11 +172,10 @@ layer2_xgb.fit(X_subtrain_balanced, y_subtrain_balanced)
 
 # Step 5D: Isotonic Calibration
 print("    -> Executing Isotonic Regression to correct SMOTE probability distortion...")
-# cv='prefit' strictly freezes the base XGBoost estimator as required by scikit-learn
+# Scikit-learn 1.6+ requires freezing the base estimator
 calibrated_xgb = CalibratedClassifierCV(
-    estimator=layer2_xgb, 
-    method='isotonic',
-    cv='prefit'
+    estimator=FrozenEstimator(layer2_xgb), 
+    method='isotonic'
 )
 calibrated_xgb.fit(X_calib, y_calib)
 
