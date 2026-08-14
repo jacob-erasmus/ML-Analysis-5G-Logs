@@ -111,8 +111,8 @@ def run_simulation(scenario_name, batch_size, iterations=10):
 
         # Data Augmentation (Dimensionality 10 -> 12)
         batch_meta = batch_df.copy()
-        batch_meta['meta_ocsvm_score'] = ocsvm_scores
-        batch_meta['meta_if_score'] = if_scores
+        batch_meta['OCSVM_Score'] = ocsvm_scores
+        batch_meta['IF_Score'] = if_scores
         
         # Layer 2: Calibrated Inference (Processes 100% of the batch)
         l2_probs = calibrated_xgb.predict_proba(batch_meta)

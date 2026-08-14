@@ -299,7 +299,7 @@ joblib.dump(layer1_ocsvm, os.path.join(export_dir, 'p_layer1_ocsvm.pkl'))
 joblib.dump(layer1_if, os.path.join(export_dir, 'p_layer1_if.pkl'))
 joblib.dump(calibrated_xgb, os.path.join(export_dir, 'p_layer2_xgb_calibrated.pkl'))
 with open(os.path.join(export_dir, 'p_threshold.txt'), 'w') as f:
-    f.writes(str(best_thresh))
+    f.write(str(best_thresh))
 print("     [>] Scaler, Layer 1, and Layer 2 and best threshold succuessfully saved to disk.")
 
 
