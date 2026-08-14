@@ -144,21 +144,21 @@ print("========================================")
 # Condition 1: mIoT Synchronised Access: Simulating massive simultaneous device registrations
 t_miot, eps_miot = run_simulation(
     scenario_name="mIoT Synchronised Access (Device Registrations)",
-    batch_size=50000,
+    batch_size=250000,
     iterations=20
 )
 
 # Condition 2: Control Plane Flooding: High velocity network spikes targeting NRF/AMF service requests
 t_flood, eps_flood = run_simulation(
     scenario_name="Control Plane Flooding (NRF/AMF Targeting)",
-    batch_size=50000,
+    batch_size=1000000,
     iterations=20
 )
 
 # Condition 3: Baseline Signalling: typical background network operational traffic
 t_base, eps_base = run_simulation(
     scenario_name="Standard Baseline Signalling Volume",
-    batch_size=1000,
+    batch_size=5000,
     iterations=20
 )
 
@@ -179,7 +179,7 @@ print(f"Flood Load EPS    : {eps_flood:,.0f} (Ratio: {ratio_flood:.2f}x)")
 print("\n ---O(n) Complexity Verdict--- ")
 if ratio_flood >= 0.80:
     print("[SUCCESS] Deployed Framework exhibits near-perfect linear O(n) scaling.")
-    print("          Layer 1 effectively shielded Layer 2 from catastrophic latency degradation during peakl Control Plane Flooding.")
+    print("Layer 1 shielded Layer 2 from catastrophic latency degradation during peakl Control Plane Flooding.")
 else: 
     print("[WARNING] Non-linear bottlenecks detected under peak laod.")
 
