@@ -302,7 +302,28 @@ with open(os.path.join(export_dir, 'p_threshold.txt'), 'w') as f:
     f.write(str(best_thresh))
 print("     [>] Scaler, Layer 1, and Layer 2 and best threshold succuessfully saved to disk.")
 
+################################
+# 10. Confusion Matrix generation
+################################
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.preprocessing import label_binarize
+from sklearn.metrics import confusion_matrix
 
+v_directory = "visualisations"
+os.makedirs(v_directory, exist_ok=True)
+
+print(f"\f[+] Generating Confusion Matrix")
+cfm = confusion_matrix(y_test, final_predictions)
+plt.figure(figsize=(10, 8))
+sns.heatmap(cfm, annot=True, fmt='d', cmap='Blues', cbar=False, linewidths=0.5, linecolor='black')
+plt.title('Parallel Hybrid Ensemble - Confusion Matrix', fontsize=14, pad=15)
+plt.ylabel('True Network State', fontsize=12)
+plt.xlabel('Predicted Network State', fontsize=12)
+plt.tight_layout()
+plt.savefig(os.path.join(v_directory, 'p_confusion_matrix.png'), dpi=300)
+plt.close()
+print("     [>] 'p_confusion_matrix.png saved.")
 
 
 

@@ -183,7 +183,69 @@ if ratio_flood >= 0.80:
 else: 
     print("[WARNING] Non-linear bottlenecks detected under peak laod.")
 
+##################################
+# 6. GRAPHS (Throughput & Latency)
+##################################
+import matplotlib.pyplot as plt
+import os
 
+arch_name = "Sequential Hybrid Ensemble"
+file_prefix = "seq" 
+vis_dir = "visualisations"
+os.makedirs(vis_dir, exist_ok=True)
+print(f"\n[+] Generating Scalability Visualizations in '{vis_dir}/'...")
+
+scenarios = ['Baseline\n(5,000 logs)', 'mIoT Burst\n(250,000 logs)', 'Control Plane Flood\n(1,000,000 logs)']
+batch_sizes = [5000, 250000, 1000000]
+
+eps_data = [eps_base, eps_miot, eps_flood]
+latency_data = [t_base, t_miot, t_flood]
+
+# --- PLOT 1: THROUGHPUT (EPS) ---
+print("    -> Plotting EPS Vectorisation Ceiling (Bar Chart)...")
+plt.figure(figsize=(9, 6))
+bars = plt.bar(scenarios, eps_data, color='#1f77b4' if file_prefix == 'seq' else '#ff7f0e', 
+               edgecolor='black', width=0.5)
+
+plt.ylabel('Throughput (Events Per Second)', fontsize=12, fontweight='bold')
+plt.title(f'Operational Throughput (EPS) - {arch_name}', fontsize=14, pad=15, fontweight='bold')
+plt.grid(axis='y', linestyle='--', alpha=0.7)
+
+for bar in bars:
+    yval = bar.get_height()
+    plt.text(bar.get_x() + bar.get_width()/2, yval + (max(eps_data)*0.02), 
+             f'{yval:,.0f}', ha='center', va='bottom', fontsize=11)
+
+plt.tight_layout()
+plt.savefig(os.path.join(vis_dir, f'{file_prefix}_eps_chart.png'), dpi=300)
+plt.close()
+
+# --- PLOT 2: O(N) LATENCY COMPLEXITY ---
+print("    -> Plotting Linear Time Complexity (Line Graph)...")
+plt.figure(figsize=(9, 6))
+plt.plot(batch_sizes, latency_data, marker='o' if file_prefix == 'seq' else 's', 
+         markersize=8, linewidth=3, color='#1f77b4' if file_prefix == 'seq' else '#ff7f0e')
+plt.xscale('log')
+plt.yscale('log')
+plt.ylabel('Inference Latency (Seconds)', fontsize=12, fontweight='bold')
+plt.xlabel('Volumetric Network Load (Logs per Buffer)', fontsize=12, fontweight='bold')
+plt.title(f'Empirical Time Complexity - {arch_name}', fontsize=14, pad=15, fontweight='bold')
+
+plt.xticks(batch_sizes, ['5,000', '250,000', '1,000,000'], fontsize=11)
+plt.grid(True, which="major", linestyle='-', alpha=0.6)
+plt.grid(True, which="minor", linestyle='--', alpha=0.3)
+
+# Annotate the peak flood latency
+plt.annotate(f'{t_flood:.2f}s', xy=(batch_sizes[2], t_flood), 
+             xytext=(-45, 15), textcoords='offset points', 
+             fontsize=11, fontweight='bold', 
+             color='#1f77b4' if file_prefix == 'seq' else '#ff7f0e')
+
+plt.tight_layout()
+plt.savefig(os.path.join(vis_dir, f'{file_prefix}_latency_chart.png'), dpi=300)
+plt.close()
+
+print(f"    [>] '{file_prefix}_eps_chart.png' and '{file_prefix}_latency_chart.png' saved successfully.")
 
 
         
