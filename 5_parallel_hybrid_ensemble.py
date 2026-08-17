@@ -26,6 +26,7 @@ import warnings
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.frozen import FrozenEstimator
+from sklearn.utils.class_weight import compute_sample_weight
 
 warnings.filterwarnings("ignore") 
 
@@ -64,7 +65,7 @@ y_test = df_test['LabelEnc']
 ###############################################################
 # 2. GOLDEN FEATURES (DERIVED FROM TUNING SCRIPT)
 ###############################################################
-print("\n[+] Loading 10 Golden Features...")
+print("\n[+] Loading 10 Golden Features + 3 Class 4 Targets...")
 
 golden_features = [
     'Total Length of Bwd Packets', 
@@ -76,7 +77,11 @@ golden_features = [
     'Flow Packets/s', 
     'host.name_ausf', 
     'host.name_amf', 
-    'zeek.udp_conns_1,728,325,600'
+    'zeek.udp_conns_1,728,325,600',
+    # Additions: Class 4 Key Features from Script
+    'fields.vnf_connection',
+    'host.name_nrf',
+    'fields.vnf_weird'
 ]
 
 X_train_final = X_train[golden_features]
@@ -157,18 +162,31 @@ print("    -> Balancing Sub-Train dataset with SMOTE...")
 smote = SMOTE(sampling_strategy=smote_strategy, k_neighbors=1, random_state=42)
 X_subtrain_balanced, y_subtrain_balanced = smote.fit_resample(X_subtrain, y_subtrain)
 
-# Step 5C: Train the Base XGBoost
-print("    -> Training Base XGBoost architecture...")
+# Step 5C: Train the Base XGBoost with Asymmentric Penalities
+print("    -> Initialising Tuned XGBoost...")
 layer2_xgb = XGBClassifier(
     max_depth=13,
     learning_rate=0.1186,
     n_estimators=121,
     subsample=0.8395,
+    max_delta_step=1, # for the extreme class imbalances
     eval_metric='mlogloss', 
     random_state=42, 
     n_jobs=-1
 )
-layer2_xgb.fit(X_subtrain_balanced, y_subtrain_balanced)
+
+print("    -> Calculating Penalty Matrix (Using Inverse Frequency)...")
+# dynamically calculates W_j = N / (k * N_j) for every log in the training set
+
+# calculate from the original dataset (pre SMOTE)
+true_weights_array = compute_sample_weight(class_weight='balanced', y=y_subtrain)
+# map to classes
+weight_dict = {cls: weight for cls, weight in zip(y_subtrain, true_weights_array)}
+# apply to SMOTE dataset
+custom_weights = np.array([weight_dict[cls] for cls in y_subtrain_balanced])
+
+print("    -> Training Base XGBoost architecture with weighted penalties..")
+layer2_xgb.fit(X_subtrain_balanced, y_subtrain_balanced, sample_weight=custom_weights)
 
 # Step 5D: Isotonic Calibration
 print("    -> Executing Isotonic Regression to correct SMOTE probability distortion...")
