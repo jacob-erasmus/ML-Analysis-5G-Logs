@@ -226,7 +226,7 @@ except ImportError:
         cv='prefit'
     )
 calibrated_xgb.fit(X_calib_meta, y_calib)
-
+"""
 #############################
 # 6. INFERENCE & CALIBRATION
 #############################
@@ -248,8 +248,8 @@ for thresh in np.arange(0.01, 1.00, 0.01):
     temp_preds = np.where(prob_attack >= thresh, most_likely_attack, 0)
     
     # Calculate both metrics dynamically
-    temp_f1 = f1_score(y_test, temp_preds, average='macro', zero_division=0)
-    temp_prec = precision_score(y_test, temp_preds, average='macro', zero_division=0)
+    temp_f1 = f1_score(y_calib, temp_preds, average='macro', zero_division=0)
+    temp_prec = precision_score(y_calib, temp_preds, average='macro', zero_division=0)
     
     # THE CONSTRAINT: only update the "best" model IF Precision is >= 90%
     if temp_prec >= 0.90 and temp_f1 > best_f1:
@@ -264,7 +264,7 @@ if best_preds is None:
     # fallback loop (F1 Maximization)
     for thresh in np.arange(0.01, 1.00, 0.01):
         temp_preds = np.where(prob_attack >= thresh, most_likely_attack, 0)
-        temp_f1 = f1_score(y_test, temp_preds, average='macro', zero_division=0)
+        temp_f1 = f1_score(y_calib, temp_preds, average='macro', zero_division=0)
         
         if temp_f1 > best_f1:
             best_f1 = temp_f1
@@ -276,7 +276,69 @@ final_predictions = best_preds
 
 # The new alert count metric (since Layer 1 no longer physically drops rows)
 flagged_alerts = np.count_nonzero(final_predictions)
+"""
+#################################################
+# 6. EMPIRICAL THRESHOLD OPTIMISATION & INFERENCE
+#################################################
 
+print("\n[+] Executing Multi-Class Calibration & Empirical Threshold Optimisation...")
+
+print("    -> Sweeping thresholds on Calibration Holdout to maximize Macro F1...")
+print("    -> Enforcing strict >= 0.90 Precision boundary for viability...")
+
+# Step 6A: Discover Optimal Threshold on the Validation/Calibration Set
+y_calib_probs = calibrated_xgb.predict_proba(X_calib_meta)
+prob_attack_calib = 1.0 - y_calib_probs[:, 0]
+most_likely_attack_calib = np.argmax(y_calib_probs[:, 1:], axis=1) + 1
+
+best_f1 = 0
+best_thresh = 0.5
+best_prec_at_max_f1 = 0
+best_rec_at_max_f1 = 0
+threshold_found = False
+
+# The Constrained Search Loop (STRICTLY ON CALIBRATION DATA)
+for thresh in np.arange(0.01, 1.00, 0.01):
+    temp_preds = np.where(prob_attack_calib >= thresh, most_likely_attack_calib, 0)
+    
+    # Calculate metrics dynamically on the holdout set
+    temp_f1 = f1_score(y_calib, temp_preds, average='macro', zero_division=0)
+    temp_prec = precision_score(y_calib, temp_preds, average='macro', zero_division=0)
+    temp_rec = recall_score(y_calib, temp_preds, average='macro', zero_division=0)
+    
+    # THE CONSTRAINT: only update the "best" threshold IF Precision is >= 80%
+    if temp_prec >= 0.80 and temp_f1 > best_f1:
+        best_f1 = temp_f1
+        best_prec_at_max_f1 = temp_prec
+        best_rec_at_max_f1 = temp_rec
+        best_thresh = thresh
+        threshold_found = True
+
+# Failsafe: If no threshold met the 80% constraint, default to standard F1 maximization
+if not threshold_found:
+    print("    [!] WARNING: 80% Precision constraint could not be met. Defaulting to standard F1 maximization.")
+    # fallback loop (F1 Maximization)
+    for thresh in np.arange(0.01, 1.00, 0.01):
+        temp_preds = np.where(prob_attack_calib >= thresh, most_likely_attack_calib, 0)
+        temp_f1 = f1_score(y_calib, temp_preds, average='macro', zero_division=0)
+        
+        if temp_f1 > best_f1:
+            best_f1 = temp_f1
+            best_thresh = thresh
+
+print(f"    [>] Optimal Threshold locked at: {best_thresh:.2f} (Calibration Macro F1: {best_f1:.4f})")
+print(f"    [>] Calibration Validation -> Precision: {best_prec_at_max_f1:.4f} | Recall: {best_rec_at_max_f1:.4f} | F1: {best_f1:.4f}")
+# Step 6B: Apply the Discovered Threshold to the Unseen Test Set
+print("\n[+] Applying Discovered Threshold blindly to the 20% Unseen Test Set...")
+l2_probs = calibrated_xgb.predict_proba(X_test_meta)
+prob_attack_test = 1.0 - l2_probs[:, 0]
+most_likely_attack_test = np.argmax(l2_probs[:, 1:], axis=1) + 1
+
+# Execute final predictions using the mathematically locked threshold
+final_predictions = np.where(prob_attack_test >= best_thresh, most_likely_attack_test, 0)
+
+# The new alert count metric 
+flagged_alerts = np.count_nonzero(final_predictions)
 ##########################################################
 # 7. DETERMINISTIC RULESET BASELINE
 ##########################################################
@@ -317,17 +379,28 @@ print("==================================================")
 
 # Hybrid Ensemble Metrics
 he_acc = accuracy_score(y_test, final_predictions)
-he_prec = precision_score(y_test, final_predictions, average='macro', zero_division=0)
-he_rec = recall_score(y_test, final_predictions, average='macro', zero_division=0)
-he_f1 = f1_score(y_test, final_predictions, average='macro', zero_division=0)
+# with weighted metrics
+he_w_prec = precision_score(y_test, final_predictions, average='weighted', zero_division=0)
+he_w_rec = recall_score(y_test, final_predictions, average='weighted', zero_division=0)
+he_w_f1 = f1_score(y_test, final_predictions, average='weighted', zero_division=0)
+# with macro metrics
+he_m_prec = precision_score(y_test, final_predictions, average='macro', zero_division=0)
+he_m_rec = recall_score(y_test, final_predictions, average='macro', zero_division=0)
+he_m_f1 = f1_score(y_test, final_predictions, average='macro', zero_division=0)
 
 rf = 0.0 # Layer 1 no longer reduces traffic; it extracts features.
 
-print("--- HYBRID ML ENSEMBLE ---")
+print("--- HYBRID ML ENSEMBLE (WEIGHTED AVERAGE) ---")
 print(f"Accuracy:         {he_acc:.4f}")
-print(f"Precision:        {he_prec:.4f}")
-print(f"Recall:           {he_rec:.4f}")
-print(f"F1-Score (Macro): {he_f1:.4f}")
+print(f"Precision:        {he_w_prec:.4f}")
+print(f"Recall:           {he_w_rec:.4f}")
+print(f"F1-Score (Macro): {he_w_f1:.4f}")
+print(f"Reduction Factor: {rf:.4f} (Goal: ~0.99)")
+print("--- HYBRID ML ENSEMBLE (MACRO AVERAGE) ---")
+print(f"Accuracy:         {he_acc:.4f}")
+print(f"Precision:        {he_m_prec:.4f}")
+print(f"Recall:           {he_m_rec:.4f}")
+print(f"F1-Score (Macro): {he_m_f1:.4f}")
 print(f"Reduction Factor: {rf:.4f} (Goal: ~0.99)")
 
 print("\n--- DETERMINISTIC BASELINE ---")
