@@ -143,26 +143,46 @@ X_test_meta['IF_Score'] = test_scores_if
 ########################################################
 print("\n[+] Training Layer 2: XGBoost with Isotonic Probability Calibration...")
 
-# Step 5A: Create the True-Distribution Calibration Holdout
+# Step 5A: Create the True-Distribution Calibration Holdout without meta features
 print("    -> Isolating 20% of Training Vault for uncorrupted calibration...")
-X_subtrain, X_calib, y_subtrain, y_calib = train_test_split(
-    X_train_meta, y_train, test_size=0.20, stratify=y_train, random_state=42
+X_subtrain_raw, X_calib_raw, y_subtrain, y_calib = train_test_split(
+    X_train[golden_features], y_train, test_size=0.20, stratify=y_train, random_state=42
 )
 
-# Step 5B: Apply Adaptive SMOTE STRICTLY to the Sub-Train set
+# Step 5B: Apply Adaptive SMOTE STRICTLY to the Sub-Train set exclusively to the RAW features
 class_counts = y_subtrain.value_counts()
 majority_count = class_counts.max()
-target_minority = int(majority_count * 0.10)
+target_minority = int(majority_count * 0.10) # Synthesise minority classes to 10% of majority
 
 smote_strategy = {cls: (count if count >= target_minority else target_minority) 
                   for cls, count in class_counts.items() if cls != 0}
 smote_strategy[0] = majority_count 
 
-print("    -> Balancing Sub-Train dataset with SMOTE...")
+print("    -> Synthesing for micro-classes (raw SMOTE)...")
+#print("    -> Balancing Sub-Train dataset with SMOTE...")
 smote = SMOTE(sampling_strategy=smote_strategy, k_neighbors=1, random_state=42)
-X_subtrain_balanced, y_subtrain_balanced = smote.fit_resample(X_subtrain, y_subtrain)
+X_subtrain_balanced_raw, y_subtrain_balanced = smote.fit_resample(X_subtrain_raw, y_subtrain)
 
-# Step 5C: Train the Base XGBoost with Asymmentric Penalities
+# Layer 1 re-evaluate (for the meta-features)
+print("    -> Re-evaluating synthetic logs through Layer 1 (OCSVM & IF)...")
+# Calculate true mathematical spatial distances for the newly synthesized data
+ocsvm_scores_bal = layer1_ocsvm.decision_function(X_subtrain_balanced_raw)
+if_scores_bal = layer1_if.decision_function(X_subtrain_balanced_raw)
+
+# Append the uncorrupted meta-features back onto the balanced dataset
+X_subtrain_balanced_meta = X_subtrain_balanced_raw.copy()
+X_subtrain_balanced_meta['OCSVM_Score'] = ocsvm_scores_bal
+X_subtrain_balanced_meta['IF_Score'] = if_scores_bal
+
+# Do the exact same append for the Calibration holdout
+ocsvm_scores_cal = layer1_ocsvm.decision_function(X_calib_raw)
+if_scores_cal = layer1_if.decision_function(X_calib_raw)
+
+X_calib_meta = X_calib_raw.copy()
+X_calib_meta['OCSVM_Score'] = ocsvm_scores_cal
+X_calib_meta['IF_Score'] = if_scores_cal
+
+# Step 5C: Train the Base XGBoost
 print("    -> Initialising Tuned XGBoost...")
 layer2_xgb = XGBClassifier(
     max_depth=13,
@@ -174,28 +194,38 @@ layer2_xgb = XGBClassifier(
     random_state=42, 
     n_jobs=-1
 )
-
+"""
 print("    -> Calculating Penalty Matrix (Using Inverse Frequency)...")
 # dynamically calculates W_j = N / (k * N_j) for every log in the training set
-
+custom_weights = compute_sample_weight(class_weight='balanced', y=y_subtrain)
 # calculate from the original dataset (pre SMOTE)
 true_weights_array = compute_sample_weight(class_weight='balanced', y=y_subtrain)
 # map to classes
 weight_dict = {cls: weight for cls, weight in zip(y_subtrain, true_weights_array)}
 # apply to SMOTE dataset
 custom_weights = np.array([weight_dict[cls] for cls in y_subtrain_balanced])
+"""
+print("    -> Training XGBoost on 15-dimensional post-SMOTE...")
+#layer2_xgb.fit(X_subtrain_balanced, y_subtrain_balanced, sample_weight=custom_weights)
+layer2_xgb.fit(X_subtrain_balanced_meta, y_subtrain_balanced)
 
-print("    -> Training Base XGBoost architecture with weighted penalties..")
-layer2_xgb.fit(X_subtrain_balanced, y_subtrain_balanced, sample_weight=custom_weights)
 
 # Step 5D: Isotonic Calibration
 print("    -> Executing Isotonic Regression to correct SMOTE probability distortion...")
 # Scikit-learn 1.6+ requires freezing the base estimator
-calibrated_xgb = CalibratedClassifierCV(
-    estimator=FrozenEstimator(layer2_xgb), 
-    method='isotonic'
-)
-calibrated_xgb.fit(X_calib, y_calib)
+try:
+    calibrated_xgb = CalibratedClassifierCV(
+        estimator=FrozenEstimator(layer2_xgb), 
+        method='isotonic'
+    )
+except ImportError:
+    # Fallback for older scikit-learn versions
+    calibrated_xgb = CalibratedClassifierCV(
+        base_estimator=layer2_xgb, 
+        method='isotonic',
+        cv='prefit'
+    )
+calibrated_xgb.fit(X_calib_meta, y_calib)
 
 #############################
 # 6. INFERENCE & CALIBRATION
