@@ -1,5 +1,5 @@
 """
-5_parallel_hybrid_ensemble.py
+5_hybrid_ensemble.py
 Author: Jacob Erasmus
 Project: Honours Research Project
 Purpose: An improved architecture but deviation from the proposed methodology. Executes a parallel meta-feature hybrid ensemble. Overcomes the bottlenecks of the sequential 
@@ -9,8 +9,9 @@ Alignment with Methodology:
 Pivot from Methodology:
     - Instead of dropping logs based on binary rules, Layer 1 (OCSVM and Isolation Forest) generates continous spatial metrics. These metrics are concatenated as 'Meta-Features'
     (Dimensionality is now 12 (from 10)), vastly improving XGBoost's ability to classify zero-day attacks. 
-    - Calibration: Isotonic Regression is applied to a strict 20% holdout set to correct the probability distortion caused by SMOTE upsampling.
-    - Threshold set >= 90% Precision to ensure best viability.
+    - Abandoned synthethic oversampling
+    - Added dynmaic Power-Law smoothing loop on 20% holdout to calculate optimal penalties without data leakage.
+
 """
 import pandas as pd
 import numpy as np
@@ -31,7 +32,7 @@ from sklearn.utils.class_weight import compute_sample_weight
 warnings.filterwarnings("ignore") 
 
 print("==================================================")
-print("--- PARALLEL META-FEATURE HYBRID ENSEMBLE ---   ")
+print("--- PARALLEL META-FEATURE HYBRID ENSEMBLE v2---   ")
 print("==================================================")
 
 #############################################
