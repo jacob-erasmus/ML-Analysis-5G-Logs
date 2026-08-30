@@ -367,15 +367,15 @@ print("==================================================")
 ##############################
 import joblib
 import os
-export_dir = "alt_deployed_framework"
+export_dir = "alt_hn_deployed_framework"
 print("\n[+] Exporting Hybrid w/Normalisatio ML Ensemble Model for Deployed Framework which will be used for Scalability Validation to '{export_dir}/' directory...")
 joblib.dump(layer1_scaler, os.path.join(export_dir, 'hn_layer1_scaler.pkl'))
 joblib.dump(layer1_ocsvm, os.path.join(export_dir, 'hn_layer1_ocsvm.pkl'))
 joblib.dump(layer1_if, os.path.join(export_dir, 'hn_layer1_if.pkl'))
 joblib.dump(layer2_xgb, os.path.join(export_dir, 'hn_layer2_xgb.pkl'))
-
+joblib.dump(final_optimal_thresholds, os.path.join(export_dir, 'hn_thresholds.pkl'))
 #with open(os.path.join(export_dir, 'p_threshold.txt'), 'w') as f:
-#    f.write(str(best_thresh))
+  #  f.write(str(best_thresh))
 print("     [>] Scaler, Layer 1, and Layer 2 succuessfully saved to disk.")
 
 ################################
