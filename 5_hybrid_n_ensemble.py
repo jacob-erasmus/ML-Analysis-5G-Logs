@@ -2,34 +2,44 @@
 5_hybrid_n_ensemble.py
 Author: Jacob Erasmus
 Project: Honours Research Project
-Purpose: An improved architecture that uses a 
+Purpose: Implements the constraint-driven normalised framework/model. This architecture utilises a parallel hybrid ensemble where Layer 1 (OCSVM & IF) acts
+         as a topological feature extractor rather than a filter. Layers 2 (XGBoost) processes all the traffic as no logs dropped in layer 1, it uses a recall-constrained
+         hyperparameter grid search and continous beta normalisation to classify the imbalance 5G network states mathematically. This approach was taken instead of syntethic data augmentation.
 Alignment with Methodology:
-    - Section 4.2.1-4.2.3
+    - Section 4.2.1: Ingestion an dmemory optimisation via datatype downcasting.
+    - Section 4.2.2 & 4.2.3: Implementation of selected algorithms (XGBoost, OCSVM were champions, and Isolation Forest was another candiate)
+    - Section 4.5: Modeal serialisation and export for Scalability Assessment
 Pivot from Methodology:
-    - 
+    - Deviation from Section 4.3: Layer 1 operates in parallel, no longer sequential triage, thus no reduction factor. Instead, it appends continous spatial anomaly scores to the feature set
+    - Deviation from Section 4.4: Abandoned SMOTE to prevent 5G topological data leakage
+Other key changes from other models:
+    - Replaced static thresholds and Isotonic Calibration with autonomous thresholding, controlled by constraint of precision >= 0.81
+    - Feature Space Expansion: expanded from the intial 10 global features to 13 to resolve blind spots in Class 4 attacks.
 
 """
 import pandas as pd
 import numpy as np
+import joblib
+import os
+import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.ensemble import IsolationForest
 from xgboost import XGBClassifier
-from imblearn.over_sampling import SMOTE
 from sklearn.preprocessing import StandardScaler
 from sklearn.kernel_approximation import Nystroem
 from sklearn.linear_model import SGDOneClassSVM
 from sklearn.pipeline import make_pipeline
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, fbeta_score
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import confusion_matrix
+
 import warnings
-from sklearn.calibration import CalibratedClassifierCV
-from sklearn.model_selection import train_test_split, StratifiedKFold
-from sklearn.frozen import FrozenEstimator
-from sklearn.utils.class_weight import compute_sample_weight
 
 warnings.filterwarnings("ignore") 
 
-print("==================================================")
-print("--- PARALLEL META-FEATURE HYBRID ENSEMBLE v2---   ")
-print("==================================================")
+print("================================================================")
+print("--- PARALLEL META-FEATURE HYBRID ENSEMBLE w/Normalisation ---   ")
+print("================================================================")
 
 #############################################
 # 1. LOAD & DOWNCAST THE DATA (Section 4.2.1)
@@ -47,21 +57,21 @@ def optimize_memory(df):
             df[col] = df[col].astype('int32')
     return df
 
-print("[+] Loading and Optimizing 80% Training Vault...")
+print("[+] Loading and Optimising 80% Training Vault...")
 df_train = pd.read_csv("logs_80percent.csv")
 df_train = optimize_memory(df_train)
 X_train = df_train.drop(columns=['LabelEnc'])
 y_train = df_train['LabelEnc']
 
-print("[+] Loading and Optimizing 20% Testing Vault (Unseen Data)...")
+print("[+] Loading and Optimising 20% Testing Vault (Unseen Data)...")
 df_test = pd.read_csv("logs_20percent.csv") 
 df_test = optimize_memory(df_test)
 X_test = df_test.drop(columns=['LabelEnc'])
 y_test = df_test['LabelEnc']
 
-###############################################################
-# 2. GOLDEN FEATURES (DERIVED FROM TUNING SCRIPT)
-###############################################################
+###################################################################
+# 2. GOLDEN FEATURES (DERIVED FROM TUNING SCRIPT & Class 4 targets)
+###################################################################
 print("\n[+] Loading 10 Golden Features + 3 Class 4 Targets...")
 
 golden_features = [
@@ -125,8 +135,8 @@ test_scores_if = layer1_if.decision_function(X_test_full_scaled)
 # 4. DATA MERGE
 ################
 print("\n[+] Expanding Dimensionality with Unsupervised Meta-Features...")
-# Concatenate the 2 unsupervised continous scores onto the 10 Golden Features.
-# XGBoost would then have 12 dimensions to look at, allowing better understanding of threat severity
+# Concatenate the 2 unsupervised continous scores onto the 13 Features.
+# XGBoost would then have 15 dimensions to look at, allowing better understanding of threat severity with topological context.
 X_train_meta = X_train_final.copy()
 X_train_meta['OCSVM_Score'] = train_scores_ocsvm
 X_train_meta['IF_Score'] = train_scores_if
@@ -135,22 +145,17 @@ X_test_meta = X_test_final.copy()
 X_test_meta['OCSVM_Score'] = test_scores_ocsvm
 X_test_meta['IF_Score'] = test_scores_if
 
-# -------------------------------------------------------------
+#############################################
 # 5. SINGLE-STAGE ENGINE (PURE LOG-SMOOTHING)
-# -------------------------------------------------------------
-import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, fbeta_score
-from xgboost import XGBClassifier
-
-print("\n[+] Re-initiating Champion Normalization Architecture...")
+#############################################
+print("\n[+] Re-initiating Normalisation Architecture...")
 
 # 1. Strict Validation Split for Leakage-Free Threshold Discovery
 X_subtrain, X_valid, y_subtrain, y_valid = train_test_split(
     X_train_meta, y_train, test_size=0.20, stratify=y_train, random_state=42
 )
 
-# 2. Pure Log-Smoothed Weights (Zero Manual Heuristics)
+# 2. Pure Log-Smoothed Weights (No Manual Heuristics)
 print("    -> Calculating pure logarithmic weights to anchor class boundaries...")
 class_counts = y_subtrain.value_counts()
 majority_count = class_counts.max()
@@ -172,11 +177,9 @@ layer2_xgb = XGBClassifier(
     n_jobs=-1
 )
 layer2_xgb.fit(X_subtrain, y_subtrain, sample_weight=custom_weights)
-# -------------------------------------------------------------
+##############################################
 # 6. AUTONOMOUS RECALL-CONSTRAINED GRID SEARCH
-# -------------------------------------------------------------
-from sklearn.metrics import fbeta_score, f1_score, precision_score, recall_score, accuracy_score
-import numpy as np
+##############################################
 
 print("\n[+] Initiating Recall-Constrained Hyperparameter Grid Search...")
 print("    -> Objective: Maximize Macro Recall while strictly bounding Precision >= 81%...")
@@ -233,7 +236,7 @@ for scalar in severity_scalars:
                 best_thresh = thresh
         temp_thresholds[cls] = best_thresh
 
-    # B. Simulate Pure Normalized Inference on Validation Holdout
+    # B. Simulate Pure Normalised Inference on Validation Holdout
     base_ratios_valid = np.zeros_like(y_valid_probs)
     for cls in range(1, 15):
         base_ratios_valid[:, cls] = y_valid_probs[:, cls] / temp_thresholds[cls]
@@ -244,7 +247,7 @@ for scalar in severity_scalars:
     
     valid_predictions = np.where(winning_ratios_valid >= 1.0, best_attack_valid, 0)
     
-    # C. Evaluate against the Thesis Mandate (Recall > 80, Precision > 81)
+    # C. Evaluate against targets (Recall > 80, Precision > 81)
     temp_macro_prec = precision_score(y_valid, valid_predictions, average='macro', zero_division=0)
     temp_macro_rec = recall_score(y_valid, valid_predictions, average='macro', zero_division=0)
     
@@ -275,16 +278,16 @@ if best_valid_macro_recall == 0.0:
 
 print(f"\n    [>] Optimal Severity Scalar mathematically locked at: {best_global_scalar:.2f}")
 
-# -------------------------------------------------------------
-# 7. NORMALIZED INFERENCE (UNSEEN TEST VAULT)
-# -------------------------------------------------------------
-print("\n[+] Executing Pure Normalized Inference on Unseen Test Vault...")
+#############################################
+# 7. NORMALISED INFERENCE (UNSEEN TEST VAULT)
+##############################################
+print("\n[+] Executing Normalised Inference on Unseen Test Vault...")
 y_test_probs = layer2_xgb.predict_proba(X_test_meta)
 
 base_ratios = np.zeros_like(y_test_probs)
 
 for cls in range(1, 15):
-    # Pure Normalization (No Tie-Breaker Multiplier)
+    # Normalisation
     base_ratios[:, cls] = y_test_probs[:, cls] / final_optimal_thresholds[cls]
 
 best_attack_classes = np.argmax(base_ratios[:, 1:], axis=1) + 1
@@ -365,27 +368,18 @@ print("==================================================")
 ##############################
 # 9. EXPORT DEPLOYED FRAMEWORK 
 ##############################
-import joblib
-import os
 export_dir = "alt_hn_deployed_framework"
-print("\n[+] Exporting Hybrid w/Normalisatio ML Ensemble Model for Deployed Framework which will be used for Scalability Validation to '{export_dir}/' directory...")
+print("\n[+] Exporting Hybrid w/Normalisation ML Ensemble Model for Deployed Framework which will be used for Scalability Validation to '{export_dir}/' directory...")
 joblib.dump(layer1_scaler, os.path.join(export_dir, 'hn_layer1_scaler.pkl'))
 joblib.dump(layer1_ocsvm, os.path.join(export_dir, 'hn_layer1_ocsvm.pkl'))
 joblib.dump(layer1_if, os.path.join(export_dir, 'hn_layer1_if.pkl'))
 joblib.dump(layer2_xgb, os.path.join(export_dir, 'hn_layer2_xgb.pkl'))
 joblib.dump(final_optimal_thresholds, os.path.join(export_dir, 'hn_thresholds.pkl'))
-#with open(os.path.join(export_dir, 'p_threshold.txt'), 'w') as f:
-  #  f.write(str(best_thresh))
-print("     [>] Scaler, Layer 1, and Layer 2 succuessfully saved to disk.")
+print("     [>] Scaler, Layer 1, Layer 2, and Thresholds succuessfully saved to disk.")
 
 ################################
 # 10. Confusion Matrix generation
 ################################
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.preprocessing import label_binarize
-from sklearn.metrics import confusion_matrix
-
 v_directory = "visualisations"
 os.makedirs(v_directory, exist_ok=True)
 

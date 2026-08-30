@@ -56,7 +56,10 @@ golden_features = [
         'Flow Packets/s', 
         'host.name_ausf',
         'host.name_amf',
-        'zeek.udp_conns_1,728,325,600'
+        'zeek.udp_conns_1,728,325,600',
+        'fields.vnf_connection',
+        'host.name_nrf',
+        'fields.vnf_weird'
 ]
 
 X_full_stream = df_full[golden_features]
