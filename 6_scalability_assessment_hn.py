@@ -68,7 +68,7 @@ print(f"    [>] Stream Ready: Pool of {X_full_stream.shape[0]:,} 5G logs availab
 #############################
 # 2. LOAD DEPLOYED FRAMEWORK
 #############################
-export_dir = "alt_hn_deployed_framework"
+export_dir = "final_framework"
 print(f"\n[+] Loading Framework from '{export_dir}/ directory...")
 
 try:

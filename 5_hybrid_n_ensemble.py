@@ -368,7 +368,7 @@ print("==================================================")
 ##############################
 # 9. EXPORT DEPLOYED FRAMEWORK 
 ##############################
-export_dir = "alt_hn_deployed_framework"
+export_dir = "final_framework"
 print("\n[+] Exporting Hybrid w/Normalisation ML Ensemble Model for Deployed Framework which will be used for Scalability Validation to '{export_dir}/' directory...")
 joblib.dump(layer1_scaler, os.path.join(export_dir, 'hn_layer1_scaler.pkl'))
 joblib.dump(layer1_ocsvm, os.path.join(export_dir, 'hn_layer1_ocsvm.pkl'))

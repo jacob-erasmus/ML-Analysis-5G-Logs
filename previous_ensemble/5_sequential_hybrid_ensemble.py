@@ -240,7 +240,7 @@ print("==================================================")
 ##############################
 import joblib
 import os
-export_dir = "deployed_framework"
+export_dir = "original_framework"
 print("\n[+] Exporting Hybrid Ensemble Model for Deployed Framework which will be used for Scalability Validation to '{export_dir}/' directory...")
 joblib.dump(layer1_scaler, os.path.join(export_dir, 'seq_layer1_scaler.pkl'))
 joblib.dump(layer1_ocsvm, os.path.join(export_dir, 'seq_layer1_ocsvm.pkl'))
