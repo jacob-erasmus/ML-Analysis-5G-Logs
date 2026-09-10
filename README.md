@@ -7,6 +7,7 @@ This repository contains the code and experimental data for my BSc(Hons) researc
 
 ## Project Overview
 > **Full Report:** [Read the research report here]()
+
 This research develops a scalable, parallel hybrid ensemble machine learning framework designed for processing 5G logs. The finalised constraint-driven normalised framework utilises a parallel meta-feature extraction layer (OCSVM and Isolation Forest) and an XGBoost inference engine. The framework employs a continous beta normalisation loop driven by a Neyman-Pearson contrained hyperparameter search (set to maximise Macro Recall while bounding Precision $\ge 0.81$). 
 
 ### Methodology Overview
@@ -22,16 +23,16 @@ The repository is organised to separate the final deployable prototype from the 
 
 ## Setup Instructions
 ### 1. Clone the repository:
-    '''bash
-    git clone https://github.com/jacob-erasmus/ML-Analysis-5G-Logs.git
-    cd ML-Analysis-5G-Logs
-    '''
+'''bash
+git clone https://github.com/jacob-erasmus/ML-Analysis-5G-Logs.git
+cd ML-Analysis-5G-Logs
+'''
 ### 2. Install dependencies:
-    '''bash
-    pip install -r requirements.txt
-    '''
+'''bash
+pip install -r requirements.txt
+'''
 ### 3. Dataset:
-    Due to file size limitations, the full training and testing sets ('logs_80percent.csv' and 'logs_20percent.csv') are not hosted directly in this repo. Ensure these files are placed in the root directory. These files can be found here: ....
+Due to file size limitations, the full training and testing sets ('logs_80percent.csv' and 'logs_20percent.csv') are not hosted directly in this repo. Ensure these files are placed in the root directory. These files can be found here: ....
 
 ## Running the Prototype
 ### 1. Training & Inference:
