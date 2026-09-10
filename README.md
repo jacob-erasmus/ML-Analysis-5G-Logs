@@ -23,30 +23,34 @@ The repository is organised to separate the final deployable prototype from the 
 
 ## Setup Instructions
 ### 1. Clone the repository:
-'''bash
-git clone https://github.com/jacob-erasmus/ML-Analysis-5G-Logs.git
-cd ML-Analysis-5G-Logs
-'''
+    '''bash
+    git clone https://github.com/jacob-erasmus/ML-Analysis-5G-Logs.git
+    cd ML-Analysis-5G-Logs
+    '''
 ### 2. Install dependencies:
-'''bash
-pip install -r requirements.txt
-'''
+    '''bash
+    pip install -r requirements.txt
+    '''
 ### 3. Dataset:
 Due to file size limitations, the full training and testing sets ('logs_80percent.csv' and 'logs_20percent.csv') are not hosted directly in this repo. Ensure these files are placed in the root directory. These files can be found here: ....
 
 ## Running the Prototype
 ### 1. Training & Inference:
 To execute the final architecture, run the ensemble script. This will load the data, execute the parallel meta-feature generation, perform the recall-constrained grid search to lock the optimal scalar, and output the final normalised predictions.
+
     '''bash
     python 5_hybrid_n_ensemble.py
     '''
+
 **Expected Output:** The terminal will display the constrained threshold optimisation process, output the final forensic benchmarking metrics (namely Accuracy, Precision, Recall, F1-Score) and the deterministic baseline, export the models to 'final_framework/', and save a confusion matrix to the 'visualisations/' folder.
 
 ### 2. Operational Scalability Assessment
 To verify the $O(n)$ linear scaling and hardware latency metrics detailed in the report, execute the scalability assessment. This script streams variable physical log batches (from 5,000 to 1,000,000 logs) through the deployed framework.
+
     '''bash
     python 6_scalability_assessment_hn.py
     '''
+    
 **Expected Output:** The terminal will display the simulation of the various 5G network conditions, outputting the Mean Inference Latency (t), Throughput (EPS) and a final Stability Ratio to verify linear scaling under a volumetric flood.
 
 
