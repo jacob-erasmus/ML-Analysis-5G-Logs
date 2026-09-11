@@ -9,12 +9,12 @@ Alignment with Methodology:
     - Section 4.2.2: Stratified 5-Fold Cross-Validation.
     - Section 4.2.3: Information Gain dimensionality reduction.
     - Section 4.2.4: Recursive Feature Elimination (RFE)
-    - Section 4.2.5: Imblearn Pipeline explicitly prevents SMOTE data leakage by generating synthetic data inside the CV folds.
 """
 import pandas as pd
 import numpy as np
 from sklearn.feature_selection import mutual_info_classif, RFE
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.utils import compute_class_weight
 from xgboost import XGBClassifier
 from imblearn.over_sampling import SMOTE
 from sklearn.model_selection import train_test_split, RandomizedSearchCV
@@ -73,7 +73,7 @@ X_train_ig = X_train[top_50_features]
 
 # Step 2B: Recursive Feature Elimination (section 4.2.4)
 print("    -> Executing Recursive Feature Elimination with 5-Fold CV")
-rf_estimator = RandomForestClassifier(n_estimators=50, max_depth=10, random_state=42, n_jobs=-1)
+rf_estimator = RandomForestClassifier(n_estimators=50, max_depth=10, class_weight='balanced', random_state=42, n_jobs=1)
 cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
 # Execute RFECV. 'scoring=f1_macro' ensures the Random Forest heavily peanlises feature sets that ignore minority zero-day attacks during the pruning process.
@@ -83,11 +83,12 @@ rfecv = RFECV(
     step=2, 
     cv=cv,
     scoring='f1_macro',
-    min_features_to_select=10,
+    min_features_to_select=5,
     n_jobs=-1
 )
 rfecv.fit(X_train_ig, y_train)
 
+# the algorithm will automatically find the optimal number of features
 optimal_num = rfecv.n_features_
 golden_features = X_train_ig.columns[rfecv.support_].tolist()
 X_train_final = X_train_ig[golden_features]
@@ -98,7 +99,7 @@ print(f"        {golden_features}")
 
 # Step 2C: Generate the Ablation Study Graph for Result write up
 plt.figure(figsize=(10, 6))
-x_axis = range(10, len(rfecv.cv_results_['mean_test_score']) * 2 + 10, 2)
+x_axis = range(rfecv.min_features_to_select, rfecv.min_features_to_select + (len(rfecv.cv_results_['mean_test_score']) * rfecv.step), rfecv.step)
 plt.plot(x_axis, rfecv.cv_results_['mean_test_score'], marker='o', linestyle='-', color='b')
 plt.title('RFE with 5-Fold CV: Feature Dimensionality vs. F1-Score')
 plt.xlabel('Number of Features Selected')
@@ -121,42 +122,28 @@ print("    [>] Layer 1 parameters empirically optimised. Skipping automated CV."
 #######################################################
 print("\n[+] Initiating RandomizedSearchCV for Layer 2 (XGBoost)...")
 
-# Define target minority threshold for SMOTE based on the full dataset
-class_counts = y_train.value_counts()
-majority_count = class_counts.max()
-target_minority = int(majority_count * 0.10)
+# sklearn's class weight computation to prevent gradient explosion
+classes_array = np.unique(y_train)
+computed_weights = compute_class_weight(class_weight='balanced', classes=classes_array, y=y_train)
+class_weight_dict = dict(zip(classes_array, computed_weights))
 
-smote_strategy = {}
-for cls, count in class_counts.items():
-    if cls == 0:
-        smote_strategy[cls] = majority_count
-    elif count > 1: # Safety check to prevent SMOTE from crashing on 1-row classes
-        smote_strategy[cls] = count if count >= target_minority else target_minority
+# Apply weights to the training labels
+sample_weights_balanced = np.array([class_weight_dict[cls] for cls in y_train])
+xgb_model = XGBClassifier(eval_metric='mlogloss', max_delta_step=5, min_child_weight=0.001, random_state=42, n_jobs=-1)
 
-smote = SMOTE(sampling_strategy=smote_strategy, k_neighbors=1, random_state=42)
-xgb_model = XGBClassifier(eval_metric='mlogloss', random_state=42, n_jobs=-1)
-
-# Methodology Compliance (section 4.2.5): Wrap SMOTE and XGBoost in a pipeline so SMOTE only 
-# applies to the training folds inside the CV loop. This prevents synthetic signatures from leaking into the validation data.
-tuning_pipeline = ImbPipeline([
-    ('smote', smote),
-    ('xgb', xgb_model)
-])
-
-# The Parameter Grid for XGBoost ('xgb__' targets the model inside the pipeline)
 param_dist_xgb = {
-    'xgb__max_depth': randint(3, 15),
-    'xgb__learning_rate': uniform(0.01, 0.29),
-    'xgb__n_estimators': randint(50, 200),
-    'xgb__subsample': uniform(0.6, 0.4) # Prevents overfitting by sampling data rows per tree
+    'max_depth': randint(8, 16),
+    'learning_rate': uniform(0.01, 0.2),
+    'n_estimators': randint(50, 200),
+    'subsample': uniform(0.7, 0.3) # Prevents overfitting by sampling data rows per tree
 }
 
 macro_f1_scorer = make_scorer(f1_score, average='macro', zero_division=0)
 
 random_search_xgb = RandomizedSearchCV(
-    tuning_pipeline, 
+    estimator=xgb_model,
     param_distributions=param_dist_xgb, 
-    n_iter=10, 
+    n_iter=15, 
     cv=cv, 
     scoring=macro_f1_scorer,
     random_state=42,
@@ -164,11 +151,10 @@ random_search_xgb = RandomizedSearchCV(
 )
 
 print("    -> Searching for optimal hyperparameters...")
-random_search_xgb.fit(X_train_final, y_train)
+random_search_xgb.fit(X_train_final, y_train, sample_weight=sample_weights_balanced)
 
-# Strip the 'xgb__' prefix for clean printing
-best_params_clean = {k.replace('xgb__', ''): v for k, v in random_search_xgb.best_params_.items()}
-print(f"\n    [>] Layer 2 Golden Parameters: {best_params_clean}")
+
+print(f"\n    [>] Layer 2 Golden Parameters: {random_search_xgb.best_params_}")
 print(f"    [>] Layer 2 Best Tuning F1-Score: {random_search_xgb.best_score_:.4f}")
 
 print("\n==================================================")

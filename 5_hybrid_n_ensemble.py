@@ -82,13 +82,17 @@ golden_features = [
     'Flow Duration', 
     'Fwd Packet Length Mean', 
     'Flow Packets/s', 
-    'host.name_ausf', 
-    'host.name_amf', 
-    'zeek.udp_conns_1,728,325,600',
-    # Additions: Class 4 Key Features from Script
-    'fields.vnf_connection',
     'host.name_nrf',
-    'fields.vnf_weird'
+    'host.name_udr',
+    'zeek.udp_conns_1,728,308,500'
+    #no longer selected:
+    #'host.name_ausf', 
+    #'host.name_amf', 
+    #'zeek.udp_conns_1,728,325,600'
+    # Additions: Class 4 Key Features from Script
+    #'fields.vnf_connection',
+    #'host.name_nrf',
+    #'fields.vnf_weird'
 ]
 
 X_train_final = X_train[golden_features]
@@ -166,10 +170,10 @@ custom_weights = np.array([smoothed_weights[cls] for cls in y_subtrain])
 
 print("    -> Training Baseline XGBoost Engine...")
 layer2_xgb = XGBClassifier(
-    max_depth=13,
-    learning_rate=0.1186,
-    n_estimators=121,
-    subsample=0.8395,
+    max_depth=8,
+    learning_rate=0.09638900372842316,
+    n_estimators=108,
+    subsample=0.8199582915145766,
     max_delta_step=5,       
     min_child_weight=0.001, 
     eval_metric='mlogloss', 
