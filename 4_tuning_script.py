@@ -77,7 +77,6 @@ rf_estimator = RandomForestClassifier(n_estimators=50, max_depth=10, class_weigh
 cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
 # Execute RFECV. 'scoring=f1_macro' ensures the Random Forest heavily peanlises feature sets that ignore minority zero-day attacks during the pruning process.
-# Step by 2 to accelerate the loop, enforcing a minimum of 10 features
 rfecv = RFECV(
     estimator=rf_estimator,
     step=2, 

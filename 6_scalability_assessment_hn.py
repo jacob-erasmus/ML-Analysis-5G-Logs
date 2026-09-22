@@ -45,21 +45,18 @@ except FileNotFoundError:
     print("     [!] ERROR: 'logs.csv' not found in the root directory.")
     sys.exit()
 
-# Add 10 Golden Features + 3 class 4 targets
+# Add 10 Golden Features
 golden_features = [
     'Total Length of Bwd Packets', 
-        'Bwd Packet Length Mean', 
-        'Total Length of Fwd Packets', 
-        'Flow Bytes/s', 
-        'Flow Duration', 
-        'Fwd Packet Length Mean', 
-        'Flow Packets/s', 
-        'host.name_ausf',
-        'host.name_amf',
-        'zeek.udp_conns_1,728,325,600',
-        'fields.vnf_connection',
-        'host.name_nrf',
-        'fields.vnf_weird'
+    'Bwd Packet Length Mean', 
+    'Total Length of Fwd Packets', 
+    'Flow Bytes/s', 
+    'Flow Duration', 
+    'Fwd Packet Length Mean', 
+    'Flow Packets/s', 
+    'host.name_nrf',
+    'host.name_udr',
+    'zeek.udp_conns_1,728,308,500'
 ]
 
 X_full_stream = df_full[golden_features]
