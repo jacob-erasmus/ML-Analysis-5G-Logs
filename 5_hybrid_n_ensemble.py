@@ -327,10 +327,11 @@ if available_metrics:
         
     rule_binary_truth = (y_test != 0).astype(int)
     rule_acc = accuracy_score(rule_binary_truth, rule_predictions)
+    rule_prec = precision_score(rule_binary_truth, rule_predictions, average='macro', zero_division=0)
+    rule_rec = recall_score(rule_binary_truth, rule_predictions, average='macro', zero_division=0)
     rule_f1 = f1_score(rule_binary_truth, rule_predictions, average='macro', zero_division=0)
 else:
     print("[!] No volumetric metrics found. Skipping baseline.")
-    rule_acc, rule_f1 = 0, 0
 
 ###################################
 # 8. FORENSIC BENCHMARKING RESULTS
@@ -367,6 +368,8 @@ print(f"Reduction Factor: {rf:.4f} (Goal: ~0.99)")
 
 print("\n--- DETERMINISTIC BASELINE ---")
 print(f"Accuracy:         {rule_acc:.4f}")
+print(f"Precision:        {rule_prec:.4f}")
+print(f"Recall:           {rule_rec:.4f}")
 print(f"F1-Score (Macro): {rule_f1:.4f}")
 print("==================================================")
 
