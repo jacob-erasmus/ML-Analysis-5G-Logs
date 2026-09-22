@@ -122,13 +122,18 @@ print("    [>] Layer 1 parameters empirically optimised. Skipping automated CV."
 #######################################################
 print("\n[+] Initiating RandomizedSearchCV for Layer 2 (XGBoost)...")
 
-# sklearn's class weight computation to prevent gradient explosion
-classes_array = np.unique(y_train)
-computed_weights = compute_class_weight(class_weight='balanced', classes=classes_array, y=y_train)
-class_weight_dict = dict(zip(classes_array, computed_weights))
+
+# 2. Pure Log-Smoothed Weights
+print("    -> Calculating pure logarithmic weights...")
+class_counts = y_train.value_counts()
+majority_count = class_counts.max()
+smoothed_weights = {
+    cls: np.log1p(majority_count / count) + 1 for cls, count in class_counts.items()
+}
 
 # Apply weights to the training labels
-sample_weights_balanced = np.array([class_weight_dict[cls] for cls in y_train])
+sample_weights_log = np.array([smoothed_weights[cls] for cls in y_train])
+
 xgb_model = XGBClassifier(eval_metric='mlogloss', max_delta_step=5, min_child_weight=0.001, random_state=42, n_jobs=-1)
 
 param_dist_xgb = {
@@ -151,7 +156,7 @@ random_search_xgb = RandomizedSearchCV(
 )
 
 print("    -> Searching for optimal hyperparameters...")
-random_search_xgb.fit(X_train_final, y_train, sample_weight=sample_weights_balanced)
+random_search_xgb.fit(X_train_final, y_train, sample_weight=sample_weights_log)
 
 
 print(f"\n    [>] Layer 2 Golden Parameters: {random_search_xgb.best_params_}")

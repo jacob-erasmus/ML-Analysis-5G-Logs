@@ -24,6 +24,7 @@ import os
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.ensemble import IsolationForest
+from sklearn.utils import compute_class_weight
 from xgboost import XGBClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.kernel_approximation import Nystroem
@@ -70,9 +71,9 @@ X_test = df_test.drop(columns=['LabelEnc'])
 y_test = df_test['LabelEnc']
 
 ###################################################################
-# 2. GOLDEN FEATURES (DERIVED FROM TUNING SCRIPT & Class 4 targets)
+# 2. GOLDEN FEATURES (DERIVED FROM TUNING SCRIPT)
 ###################################################################
-print("\n[+] Loading 10 Golden Features + 3 Class 4 Targets...")
+print("\n[+] Loading 10 Golden Features")
 
 golden_features = [
     'Total Length of Bwd Packets', 
@@ -170,10 +171,10 @@ custom_weights = np.array([smoothed_weights[cls] for cls in y_subtrain])
 
 print("    -> Training Baseline XGBoost Engine...")
 layer2_xgb = XGBClassifier(
-    max_depth=8,
-    learning_rate=0.09638900372842316,
-    n_estimators=108,
-    subsample=0.8199582915145766,
+    max_depth=9, #8
+    learning_rate=0.1000998503939086, #0.09638900372842316,
+    n_estimators= 181, #108,
+    subsample=0.9826605267054558, #0.8199582915145766,
     max_delta_step=5,       
     min_child_weight=0.001, 
     eval_metric='mlogloss', 
