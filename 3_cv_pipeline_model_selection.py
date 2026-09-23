@@ -36,9 +36,18 @@ print("--- The Master CV Pipeline (IG -> RFE -> SMOTE) ---")
 file_path = "logs_80percent.csv"
 print(f"Loading {file_path}...")
 df_train = pd.read_csv(file_path)
+# Downcasting
+float_cols = df_train.select_dtypes(include=['float64']).columns
+df_train[float_cols] = df_train[float_cols].astype('float32')
+int_cols = df_train.select_dtypes(include=['int64']).columns
+for col in int_cols:
+    if df_train[col].max() <= 127 and df_train[col].min() >= -128:
+        df_train[col] = df_train[col].astype('int8')
+    else:
+        df_train[col] = df_train[col].astype('int32')
 X = df_train.drop(columns=['LabelEnc'])
 y = df_train['LabelEnc']
-print(f"Data Loaded. Total Features: {X.shape[1]}")
+print(f"Data Loaded and Optimised. Total Features: {X.shape[1]}")
 
 ########################################################
 # 2. INITIALIZE THE 5-FOLD STRATIFIED CV (Section 4.2.2)
@@ -82,7 +91,7 @@ for train_index, val_index in skf.split(X, y):
     ############################################################################
     print("[+] Executing Random Forest RFE...")
     # Using a fast RF configuration just for feature ranking
-    rf_estimator = RandomForestClassifier(n_estimators=50, max_depth=10, random_state=42, n_jobs=-1)
+    rf_estimator = RandomForestClassifier(n_estimators=50, max_depth=10, random_state=42, class_weight='balanced', n_jobs=-1)
     
     # Aggressively prune down to the top 20 most forensic features
     rfe = RFE(estimator=rf_estimator, n_features_to_select=20, step=5)
@@ -95,7 +104,7 @@ for train_index, val_index in skf.split(X, y):
     X_train_final = X_train_fold_ig[final_features]
     X_val_final = X_val_fold_ig[final_features]
     
-    #######################################################
+    """     #######################################################
     # D. METHODOLOGY STEP 5: In-FoldSMOTE  (Section 4.2.5)
     ######################################################
     # Applied ONLY to X_train_final, the validation fold (X_val_final) is strictly left untouched to prevent corruption by synthetic data.
@@ -126,32 +135,52 @@ for train_index, val_index in skf.split(X, y):
         print(f"[+] SMOTE Complete. Balanced Training Samples: {X_train_balanced.shape[0]}")
     except ValueError as e:
         print(f"[!] SMOTE CRITICAL ERROR: {e}")
-        sys.exit()
+        sys.exit() """
 
-    #############################################
+    #########################################
+    # D. LOGARITHMIC COST-SENSITIVE LEARNING
+    #########################################
+    print("[+] Calculating Log-Smoothed Class Weights...")
+
+    #Identify class distributions
+    class_counts = y_train_fold.value_counts()
+    majority_count = class_counts.max()
+    # implement log equation.
+    log_weights_dict = {cls: np.log1p(majority_count / count) + 1 for cls, count in class_counts.items()}
+
+    #XGBoost requires sample weights array mapped to dataset
+    sample_weights_xgb = y_train_fold.map(log_weights_dict).values
+    print(f"    -> Weights calculated, max weight applied to rarest class: {max(log_weights_dict.values()):.4f}")
+
+    ############################################
     # E. SUPERVISED BENCHMARKING (Section 4.3.1)
     #############################################
     print("\n[+] Initialising Section 4.3.1: Supervised Model Benchmarking...")
     
     # Scale data primarily to ensure Logistic Regression can converge
     scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train_balanced)
+    X_train_scaled = scaler.fit_transform(X_train_final)
     X_val_scaled = scaler.transform(X_val_final)
 
+    # inject log weights into loss functions
     supervised_models = {
-        "Logistic Regression": LogisticRegression(max_iter=1000, random_state=42),
-        "Random Forest": RandomForestClassifier(n_estimators=50, max_depth=15, random_state=42, n_jobs=-1),
-        "XGBoost": XGBClassifier(eval_metric='mlogloss', random_state=42, n_jobs=-1) 
+        "Logistic Regression": LogisticRegression(max_iter=1000, random_state=42, class_weight=log_weights_dict),
+        "Random Forest": RandomForestClassifier(n_estimators=50, max_depth=15, random_state=42, n_jobs=-1, class_weight=log_weights_dict),
+        "XGBoost": XGBClassifier(eval_metric='mlogloss', max_depth=15, max_delta_step=5, learning_rate=0.1, random_state=42, n_jobs=-1) 
     }
     
     for model_name, model in supervised_models.items():
         print(f"    [>] Evaluating {model_name}...")
         
         if model_name == "Logistic Regression":
-            model.fit(X_train_scaled, y_train_balanced)
+            model.fit(X_train_scaled, y_train_fold)
             y_pred = model.predict(X_val_scaled)
-        else:
-            model.fit(X_train_balanced, y_train_balanced)
+        elif model_name == "XGBoost":
+            # pass log array to xgb
+            model.fit(X_train_final, y_train_fold, sample_weight=sample_weights_xgb)
+            y_pred = model.predict(X_val_final)
+        else: #random forest
+            model.fit(X_train_final, y_train_fold)
             y_pred = model.predict(X_val_final)
             
         acc = accuracy_score(y_val_fold, y_pred)
