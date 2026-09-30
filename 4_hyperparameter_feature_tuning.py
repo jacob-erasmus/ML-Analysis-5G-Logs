@@ -12,6 +12,8 @@ Alignment with Methodology:
     - Section 3.2.5: Cost-Sensitive Learning (Logarithmic Smoothing).
     - Section 3.3: Hybrid Ensemble Hyperparameter and Feature Space Tuning
 """
+import os
+
 import pandas as pd
 import numpy as np
 from sklearn.feature_selection import mutual_info_classif, RFE
@@ -98,6 +100,8 @@ print(f"    [>] GOLDEN FEATURE LIST TO COPY TO ENSEMBLE SCRIPT:")
 print(f"        {golden_features}")
 
 # Step 2C: Generate the Ablation Study Graph for reference
+v_directory = "visualisations"
+os.makedirs(v_directory, exist_ok=True)
 plt.figure(figsize=(10, 6))
 x_axis = range(rfecv.min_features_to_select, rfecv.min_features_to_select + (len(rfecv.cv_results_['mean_test_score']) * rfecv.step), rfecv.step)
 plt.plot(x_axis, rfecv.cv_results_['mean_test_score'], marker='o', linestyle='-', color='b')
@@ -106,7 +110,7 @@ plt.xlabel('Number of Features Selected')
 plt.ylabel('Macro F1-Score (Cross-Validation)')
 plt.grid(True)
 plt.tight_layout()
-plt.savefig('rfe_curve.png')
+plt.savefig(os.path.join(v_directory, 'rfe_curve.png'), dpi=300)
 plt.close()
 print("    [>] Feature elimination curve saved as 'rfe_curve.png'.")
 ##############################################################
