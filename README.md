@@ -53,6 +53,6 @@ To verify the $O(n)$ linear scaling and hardware latency metrics detailed in the
     
 **Expected Output:** The terminal will display the simulation of the various 5G network conditions, outputting the Mean Inference Latency (t), Throughput (EPS) and a final Stability Ratio to verify linear scaling under a volumetric flood.
 
-### Note: For full replication: run file 1-3 prior to above steps.
+### Note: For full replication: run files 1-4 prior to above steps.
 
 
