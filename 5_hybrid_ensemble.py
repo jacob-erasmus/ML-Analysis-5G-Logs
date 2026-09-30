@@ -1,21 +1,15 @@
 """
-5_hybrid_n_ensemble.py
+5_hybrid_ensemble.py
 Author: Jacob Erasmus
 Project: Honours Research Project
-Purpose: Implements the constraint-driven normalised framework/model. This architecture utilises a parallel hybrid ensemble where Layer 1 (OCSVM & IF) acts
-         as a topological feature extractor rather than a filter. Layers 2 (XGBoost) processes all the traffic as no logs dropped in layer 1, it uses a recall-constrained
-         hyperparameter grid search and continous beta normalisation to classify the imbalance 5G network states mathematically. This approach was taken instead of syntethic data augmentation.
+Purpose: Implements the hybrid ensemble model. This architecture utilises a parallel hybrid ensemble where Layer 1 (OCSVM & IF) acts
+         as a topological feature extractor. Layers 2 (XGBoost) processes all the traffic as no logs dropped in layer 1, it uses a recall-constrained
+         hyperparameter grid search and continous beta normalisation to classify the imbalance 5G network states mathematically.
 Alignment with Methodology:
-    - Section 4.2.1: Ingestion an dmemory optimisation via datatype downcasting.
-    - Section 4.2.2 & 4.2.3: Implementation of selected algorithms (XGBoost, OCSVM were champions, and Isolation Forest was another candiate)
-    - Section 4.5: Modeal serialisation and export for Scalability Assessment
-Pivot from Methodology:
-    - Deviation from Section 4.3: Layer 1 operates in parallel, no longer sequential triage, thus no reduction factor. Instead, it appends continous spatial anomaly scores to the feature set
-    - Deviation from Section 4.4: Abandoned SMOTE to prevent 5G topological data leakage
-Other key changes from other models:
-    - Replaced static thresholds and Isotonic Calibration with autonomous thresholding, controlled by constraint of precision >= 0.81
-    - Feature Space Expansion: expanded from the intial 10 global features to 13 to resolve blind spots in Class 4 attacks.
-
+    - Section 3.2.1: Ingestion an dmemory optimisation via datatype downcasting.
+    - Section 3.3.2 & 3.3.3: Implementation of selected algorithms (XGBoost, OCSVM were champions, and Isolation Forest was another candiate)
+    - Section 3.4: Comparative Forensic Analysis
+    - Section 3.3 & 3.5: Modeal serialisation and export for Scalability Assessment
 """
 import pandas as pd
 import numpy as np
@@ -38,15 +32,15 @@ import warnings
 
 warnings.filterwarnings("ignore") 
 
-print("================================================================")
-print("--- PARALLEL META-FEATURE HYBRID ENSEMBLE w/Normalisation ---   ")
-print("================================================================")
+print("=============================")
+print("--- HYBRID ENSEMBLE ---   ")
+print("=============================")
 
 #############################################
-# 1. LOAD & DOWNCAST THE DATA (Section 4.2.1)
+# 1. LOAD & DOWNCAST THE DATA (Section 3.2.1)
 #############################################
 def optimize_memory(df):
-    """Restores Sec 4.2.1 datatype downcasting lost during CSV export."""
+    """Restores Sec 3.2.1 datatype downcasting lost during CSV export."""
     float_cols = df.select_dtypes(include=['float64']).columns
     df[float_cols] = df[float_cols].astype('float32')
     
@@ -86,14 +80,6 @@ golden_features = [
     'host.name_nrf',
     'host.name_udr',
     'zeek.udp_conns_1,728,308,500'
-    #no longer selected:
-    #'host.name_ausf', 
-    #'host.name_amf', 
-    #'zeek.udp_conns_1,728,325,600'
-    # Additions: Class 4 Key Features from Script
-    #'fields.vnf_connection',
-    #'host.name_nrf',
-    #'fields.vnf_weird'
 ]
 
 X_train_final = X_train[golden_features]
@@ -140,8 +126,8 @@ test_scores_if = layer1_if.decision_function(X_test_full_scaled)
 # 4. DATA MERGE
 ################
 print("\n[+] Expanding Dimensionality with Unsupervised Meta-Features...")
-# Concatenate the 2 unsupervised continous scores onto the 13 Features.
-# XGBoost would then have 15 dimensions to look at, allowing better understanding of threat severity with topological context.
+# Concatenate the 2 unsupervised continous scores onto the golden Features.
+# XGBoost would then have 12 dimensions to look at, allowing better understanding of threat severity with topological context.
 X_train_meta = X_train_final.copy()
 X_train_meta['OCSVM_Score'] = train_scores_ocsvm
 X_train_meta['IF_Score'] = train_scores_if
@@ -170,11 +156,12 @@ smoothed_weights = {
 custom_weights = np.array([smoothed_weights[cls] for cls in y_subtrain])
 
 print("    -> Training Baseline XGBoost Engine...")
+# The hyperparameters below were derived from the RandomizedSearchCV in 4_hyperparameter_feature_tuning.py
 layer2_xgb = XGBClassifier(
-    max_depth=9, #8
-    learning_rate=0.1000998503939086, #0.09638900372842316,
-    n_estimators= 181, #108,
-    subsample=0.9826605267054558, #0.8199582915145766,
+    max_depth=9, 
+    learning_rate=0.1000998503939086,
+    n_estimators= 181, 
+    subsample=0.9826605267054558, 
     max_delta_step=5,       
     min_child_weight=0.001, 
     eval_metric='mlogloss', 
@@ -183,7 +170,7 @@ layer2_xgb = XGBClassifier(
 )
 layer2_xgb.fit(X_subtrain, y_subtrain, sample_weight=custom_weights)
 ##############################################
-# 6. AUTONOMOUS RECALL-CONSTRAINED GRID SEARCH
+# 6. RECALL-CONSTRAINED GRID SEARCH
 ##############################################
 
 print("\n[+] Initiating Recall-Constrained Hyperparameter Grid Search...")
@@ -351,20 +338,18 @@ he_m_prec = precision_score(y_test, final_predictions, average='macro', zero_div
 he_m_rec = recall_score(y_test, final_predictions, average='macro', zero_division=0)
 he_m_f1 = f1_score(y_test, final_predictions, average='macro', zero_division=0)
 
-rf = 0.0 # Layer 1 no longer reduces traffic; it extracts features.
 
 print("--- Hybrid w/Normalisation ML ENSEMBLE (WEIGHTED AVERAGE) ---")
 print(f"Accuracy:         {he_acc:.4f}")
 print(f"Precision:        {he_w_prec:.4f}")
 print(f"Recall:           {he_w_rec:.4f}")
 print(f"F1-Score: {he_w_f1:.4f}")
-print(f"Reduction Factor: {rf:.4f} (Goal: ~0.99)")
+
 print("--- Hybrid w/Normalisatio ML ENSEMBLE (MACRO AVERAGE) ---")
 print(f"Accuracy:         {he_acc:.4f}")
 print(f"Precision:        {he_m_prec:.4f}")
 print(f"Recall:           {he_m_rec:.4f}")
 print(f"F1-Score (Macro): {he_m_f1:.4f}")
-print(f"Reduction Factor: {rf:.4f} (Goal: ~0.99)")
 
 print("\n--- DETERMINISTIC BASELINE ---")
 print(f"Accuracy:         {rule_acc:.4f}")
@@ -378,11 +363,11 @@ print("==================================================")
 ##############################
 export_dir = "final_framework"
 print("\n[+] Exporting Hybrid w/Normalisation ML Ensemble Model for Deployed Framework which will be used for Scalability Validation to '{export_dir}/' directory...")
-joblib.dump(layer1_scaler, os.path.join(export_dir, 'hn_layer1_scaler.pkl'))
-joblib.dump(layer1_ocsvm, os.path.join(export_dir, 'hn_layer1_ocsvm.pkl'))
-joblib.dump(layer1_if, os.path.join(export_dir, 'hn_layer1_if.pkl'))
-joblib.dump(layer2_xgb, os.path.join(export_dir, 'hn_layer2_xgb.pkl'))
-joblib.dump(final_optimal_thresholds, os.path.join(export_dir, 'hn_thresholds.pkl'))
+joblib.dump(layer1_scaler, os.path.join(export_dir, 'hybrid_ensemble_layer1_scaler.pkl'))
+joblib.dump(layer1_ocsvm, os.path.join(export_dir, 'hybrid_ensemble_layer1_ocsvm.pkl'))
+joblib.dump(layer1_if, os.path.join(export_dir, 'hybrid_ensemble_layer1_if.pkl'))
+joblib.dump(layer2_xgb, os.path.join(export_dir, 'hybrid_ensemble_layer2_xgb.pkl'))
+joblib.dump(final_optimal_thresholds, os.path.join(export_dir, 'hybrid_ensemble_thresholds.pkl'))
 print("     [>] Scaler, Layer 1, Layer 2, and Thresholds succuessfully saved to disk.")
 
 ################################
@@ -395,13 +380,13 @@ print(f"\f[+] Generating Confusion Matrix")
 cfm = confusion_matrix(y_test, final_predictions)
 plt.figure(figsize=(12, 10))
 sns.heatmap(cfm, annot=True, fmt='d', cmap='Blues', cbar=False, linewidths=0.5, linecolor='black')
-plt.title('Hybrid w/Normalisation Ensemble - Confusion Matrix', fontsize=14, pad=15)
+plt.title('Hybrid Ensemble - Confusion Matrix', fontsize=14, pad=15)
 plt.ylabel('True Network State', fontsize=12)
 plt.xlabel('Predicted Network State', fontsize=12)
 plt.tight_layout()
-plt.savefig(os.path.join(v_directory, 'hn_confusion_matrix.png'), dpi=300)
+plt.savefig(os.path.join(v_directory, 'hybrid_ensemble_confusion_matrix.png'), dpi=300)
 plt.close()
-print("     [>] 'hn_confusion_matrix.png saved.")
+print("     [>] 'hybrid_ensemble_confusion_matrix.png' saved.")
 
 
 

@@ -4,8 +4,9 @@ Author: Jacob Erasmus
 Project: Honours Research Project
 Purpose: Executes the inital data ingestion, memory downcasting, and stratified dataset spilliting to establish isolated training and test sets.
 Alignment with Methodology: 
-    - Section 4.2.1: Memory Optimisation and Datatype Downcasting.
-    - Section 4.2.2: 80/20 Stratified Dataset Partitioning.
+    - Section 3.1: Initial Data Ingestion.
+    - Section 3.2.1: Memory Optimisation and Datatype Downcasting.
+    - Section 3.2.2: 80/20 Stratified Dataset Partitioning.
 """
 
 import pandas as pd

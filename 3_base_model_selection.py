@@ -1,21 +1,21 @@
 """
-3_cv_pipeline_model_selection.py
+3_base_model_selection.py
 Author: Jacob Erasmus
 Project: Honours Research Project
 Purpose: Implements the full 5-fold cross-validation pipeline for model benchmarking and selection.
 Alignment with Methodology:
-    - Section 4.2.2: 5-Fold Stratified Cross-Validation Pipeline.
-    - Section 4.2.3: Information Gain Feature Pruning.
-    - Section 4.2.4: Recursive Feature Elimination (RFE)
-    - Section 4.2.5: SMOTE applied strictly inside the fold to prevent data leakage.
-    - Section 4.3.1 & 4.3.2: Supervised and Unsupervised Model Benchmarking.
+    - Section 3.2.1: Memory Optimisation and Datatype Downcasting.
+    - Section 3.2.2: 5-Fold Stratified Cross-Validation Pipeline.
+    - Section 3.2.3: Information Gain Filtering.
+    - Section 3.2.4: Recursive Feature Elimination (RFE)
+    - Section 3.2.5: Cost-Sensitive Learning (Logarithmic Smoothing).
+    - Section 3.3.1 & 3.3.2: Supervised and Unsupervised Model Benchmarking.
 """
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import StratifiedKFold
 from sklearn.feature_selection import mutual_info_classif, RFE
 from sklearn.ensemble import RandomForestClassifier
-from imblearn.over_sampling import SMOTE
 import sys
 from sklearn.linear_model import LogisticRegression
 from xgboost import XGBClassifier
@@ -28,7 +28,7 @@ from sklearn.kernel_approximation import Nystroem
 from sklearn.linear_model import SGDOneClassSVM
 from sklearn.pipeline import make_pipeline
 
-print("--- The Master CV Pipeline (IG -> RFE -> SMOTE) ---")
+print("--- The Master CV Pipeline (IG -> RFE -> Cost-Sensitive Learning (Log Smoothing)) ---")
 
 ###############################
 # 1. LOAD THE 80% TRAINING DATA
@@ -50,7 +50,7 @@ y = df_train['LabelEnc']
 print(f"Data Loaded and Optimised. Total Features: {X.shape[1]}")
 
 ########################################################
-# 2. INITIALIZE THE 5-FOLD STRATIFIED CV (Section 4.2.2)
+# 2. INITIALIZE THE 5-FOLD STRATIFIED CV (Section 3.2.2)
 ########################################################
 skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 fold_no = 1
@@ -71,7 +71,7 @@ for train_index, val_index in skf.split(X, y):
     print(f"[+] Fold Isolated. Training Samples: {X_train_fold.shape[0]}")
     
     ##############################################################
-    # B. METHODOLOGY STEP 3: INFORMATION GAIN (IG) (Section 4.2.3)
+    # B. METHODOLOGY STEP 3: INFORMATION GAIN (IG) (Section 3.2.3)
     ##############################################################
     print("[+] Calculating Information Gain (Entropy)...")
     ig_scores = mutual_info_classif(X_train_fold, y_train_fold, random_state=42)
@@ -87,7 +87,7 @@ for train_index, val_index in skf.split(X, y):
     X_val_fold_ig = X_val_fold[selected_ig_features]
     
     ############################################################################
-    # C. METHODOLOGY STEP 4: RECURSIVE FEATURE ELIMINATION (RFE) (Section 4.2.4)
+    # C. METHODOLOGY STEP 4: RECURSIVE FEATURE ELIMINATION (RFE) (Section 3.2.4)
     ############################################################################
     print("[+] Executing Random Forest RFE...")
     # Using a fast RF configuration just for feature ranking
@@ -103,42 +103,9 @@ for train_index, val_index in skf.split(X, y):
     # Prune datasets to the final 20 features
     X_train_final = X_train_fold_ig[final_features]
     X_val_final = X_val_fold_ig[final_features]
-    
-    """     #######################################################
-    # D. METHODOLOGY STEP 5: In-FoldSMOTE  (Section 4.2.5)
-    ######################################################
-    # Applied ONLY to X_train_final, the validation fold (X_val_final) is strictly left untouched to prevent corruption by synthetic data.
-    print("[+] Applying SMOTE to handle class imbalance...")
-    
-    # Identify the size of the majority class (Class 0: Normal Traffic)
-    class_counts = y_train_fold.value_counts()
-    majority_class_count = class_counts.max()
-    
-    # Create a dynamic dictionary to cap synthetic generation
-    # Upsample minority classes to a maximum of 10% of the majority class size 
-    target_minority_size = int(majority_class_count * 0.10)
-    
-    smote_strategy = {}
-    for cls, count in class_counts.items():
-        if count == majority_class_count:
-            smote_strategy[cls] = count # Leave majority alone
-        elif count < target_minority_size:
-            smote_strategy[cls] = target_minority_size # Upsample to the cap
-        else:
-            smote_strategy[cls] = count # If a minority class is already larger than the cap, leave it alone
-
-    # Apply the capped SMOTE (k_neighbors=1 bypasses potential crashes of very rare zero-day classes)
-    smote = SMOTE(sampling_strategy=smote_strategy, k_neighbors=1, random_state=42)
-    
-    try:
-        X_train_balanced, y_train_balanced = smote.fit_resample(X_train_final, y_train_fold)
-        print(f"[+] SMOTE Complete. Balanced Training Samples: {X_train_balanced.shape[0]}")
-    except ValueError as e:
-        print(f"[!] SMOTE CRITICAL ERROR: {e}")
-        sys.exit() """
 
     #########################################
-    # D. LOGARITHMIC COST-SENSITIVE LEARNING
+    # D. LOGARITHMIC COST-SENSITIVE LEARNING (Section 3.2.5)
     #########################################
     print("[+] Calculating Log-Smoothed Class Weights...")
 
@@ -153,9 +120,9 @@ for train_index, val_index in skf.split(X, y):
     print(f"    -> Weights calculated, max weight applied to rarest class: {max(log_weights_dict.values()):.4f}")
 
     ############################################
-    # E. SUPERVISED BENCHMARKING (Section 4.3.1)
+    # E. SUPERVISED BENCHMARKING (Section 3.3.1)
     #############################################
-    print("\n[+] Initialising Section 4.3.1: Supervised Model Benchmarking...")
+    print("\n[+] Initialising Section 3.3.1: Supervised Model Benchmarking...")
     
     # Scale data primarily to ensure Logistic Regression can converge
     scaler = StandardScaler()
@@ -190,9 +157,9 @@ for train_index, val_index in skf.split(X, y):
         print(f"        Accuracy: {acc:.4f} | F1-Score: {f1:.4f}")
 
     #####################################################
-    # F. UNSUPERVISED BENCHMARKING (Section 4.3.2)
+    # F. UNSUPERVISED BENCHMARKING (Section 3.3.2)
     #####################################################
-    print("\n[+] Initialising Section 4.3: Unsupervised Model Benchmarking...")
+    print("\n[+] Initialising Section 3.3.2: Unsupervised Model Benchmarking...")
     
     # Isolate ONLY the normal traffic (Class 0), train on normal traffic so can map the bengin network geometry
     X_train_normal = X_train_final[y_train_fold == 0]

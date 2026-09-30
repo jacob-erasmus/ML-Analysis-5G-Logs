@@ -1,14 +1,16 @@
 """
-4_tuning_script.py
+4_hyperparameter_feature_tuning.py
 Author: Jacob Erasmus
 Project: Honours Research Project 
 Purpose: Executes the discovery phase to lock the Golden Features (the best features to use) and optimal hyperparameters. 
          This script is run once to establish the mathematical constants used in the final ensemble. 
 Alignment with Methodology:
-    - Section 4.2.1: Memory Optimisation and Dataype Downcasting.
-    - Section 4.2.2: Stratified 5-Fold Cross-Validation.
-    - Section 4.2.3: Information Gain dimensionality reduction.
-    - Section 4.2.4: Recursive Feature Elimination (RFE)
+    - Section 3.2.1: Memory Optimisation and Dataype Downcasting.
+    - Section 3.2.2: Stratified 5-Fold Cross-Validation.
+    - Section 3.2.3: Information Gain filtering.
+    - Section 3.2.4: Recursive Feature Elimination (RFE)
+    - Section 3.2.5: Cost-Sensitive Learning (Logarithmic Smoothing).
+    - Section 3.3: Hybrid Ensemble Hyperparameter and Feature Space Tuning
 """
 import pandas as pd
 import numpy as np
@@ -16,7 +18,6 @@ from sklearn.feature_selection import mutual_info_classif, RFE
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.utils import compute_class_weight
 from xgboost import XGBClassifier
-from imblearn.over_sampling import SMOTE
 from sklearn.model_selection import train_test_split, RandomizedSearchCV
 from sklearn.metrics import make_scorer, f1_score
 import warnings
@@ -28,17 +29,17 @@ from imblearn.pipeline import Pipeline as ImbPipeline
 
 warnings.filterwarnings("ignore")
 
-print("==================================================")
-print("--- FULL DATASET DISCOVERY AND TUNING ---")
-print("==================================================")
+print("======================")
+print("--- FULL TUNING ---")
+print("======================")
 
 ###############################################
-# 1. LOAD AND DOWNCAST THE DATA (Section 4.2.1)
+# 1. LOAD AND DOWNCAST THE DATA (Section 3.2.1)
 ###############################################
 print("[+] Loading 80%Training Vault...")
 df_train = pd.read_csv("logs_80percent.csv")
 
-print("    -> Executing Memory Optimisation & Downcasting (Sec 4.2.1)...")
+print("    -> Executing Memory Optimisation & Downcasting (Sec 3.2.1)...")
 # Downcast continuous floats to 32-bit to prevent RAM exhaustion during RFE
 float_cols = df_train.select_dtypes(include=['float64']).columns
 df_train[float_cols] = df_train[float_cols].astype('float32')
@@ -58,11 +59,11 @@ y_train = df_train['LabelEnc']
 print(f"    [>] Ingested full training vault: {X_train.shape[0]} rows, {X_train.shape[1]} features.")
 
 ########################################################
-# 2. OPTIMIsED FEATURE SELECTION (Section 4.2.3 & 4.2.4)
+# 2. OPTIMIsED FEATURE SELECTION (Section 3.2.3 & 3.2.4)
 ########################################################
 print("\n[+] Executing Global Feature Selection (IG -> RFE)...")
 
-# Step 2A: Information Gain (Entropy) (section 4.2.3)
+# Step 2A: Information Gain (Entropy) (section 3.2.3)
 print("    -> Calculating IG entropy...")
 ig_scores = mutual_info_classif(X_train, y_train, random_state=42)
 ig_series = pd.Series(ig_scores, index=X_train.columns)
@@ -71,7 +72,7 @@ top_50_features = ig_series.sort_values(ascending=False).head(50).index.tolist()
 
 X_train_ig = X_train[top_50_features]
 
-# Step 2B: Recursive Feature Elimination (section 4.2.4)
+# Step 2B: Recursive Feature Elimination (section 3.2.4)
 print("    -> Executing Recursive Feature Elimination with 5-Fold CV")
 rf_estimator = RandomForestClassifier(n_estimators=50, max_depth=10, class_weight='balanced', random_state=42, n_jobs=1)
 cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
@@ -96,7 +97,7 @@ print(f"\n    [>] RFE Cross-Validation Complete. Mathematical optimum found at: 
 print(f"    [>] GOLDEN FEATURE LIST TO COPY TO ENSEMBLE SCRIPT:")
 print(f"        {golden_features}")
 
-# Step 2C: Generate the Ablation Study Graph for Result write up
+# Step 2C: Generate the Ablation Study Graph for reference
 plt.figure(figsize=(10, 6))
 x_axis = range(rfecv.min_features_to_select, rfecv.min_features_to_select + (len(rfecv.cv_results_['mean_test_score']) * rfecv.step), rfecv.step)
 plt.plot(x_axis, rfecv.cv_results_['mean_test_score'], marker='o', linestyle='-', color='b')
@@ -109,7 +110,7 @@ plt.savefig('rfe_curve.png')
 plt.close()
 print("    [>] Feature elimination curve saved as 'rfe_curve.png'.")
 ##############################################################
-# 3. LAYER 1: UNSUPERVISED (OCSVM) JUSTIFICATION (section 4.3)
+# 3. LAYER 1: UNSUPERVISED (OCSVM) JUSTIFICATION (section 3.3.2)
 ##############################################################
 print("\n[+] Layer 1 (OCSVM) Parameter Evaluation...")
 print("    -> 'nu' parameter locked at 0.20 (Derived mathematically from EDA 19.7% anomaly rate).")

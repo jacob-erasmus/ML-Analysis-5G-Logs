@@ -1,10 +1,10 @@
 """
-6_scalability_assessment_hn.py
+6_scalability_assessment.py
 Author: Jacob Erasmus
 Project: UP Honours Research
-Purpose: Executes the operational scalability assessment for the alternate hybrid deployed framework. Simulates variable velocity 5G network conditions to measure throughput (EPS),
+Purpose: Executes the operational scalability assessment for the deployed framework. Simulates variable velocity 5G network conditions to measure throughput (EPS),
          inference latency (t), and stability.
-Alignment with Methodology: Section 4.5
+Alignment with Methodology: Section 3.5
 """
 
 import pandas as pd
@@ -69,22 +69,19 @@ export_dir = "final_framework"
 print(f"\n[+] Loading Framework from '{export_dir}/ directory...")
 
 try:
-    layer1_scaler = joblib.load(os.path.join(export_dir, 'hn_layer1_scaler.pkl'))
-    layer1_ocsvm = joblib.load(os.path.join(export_dir, 'hn_layer1_ocsvm.pkl'))
-    layer1_if = joblib.load(os.path.join(export_dir, 'hn_layer1_if.pkl'))
-    layer2_xgb = joblib.load(os.path.join(export_dir, 'hn_layer2_xgb.pkl'))
-    optimal_thresholds = joblib.load(os.path.join(export_dir, 'hn_thresholds.pkl'))
+    layer1_scaler = joblib.load(os.path.join(export_dir, 'hybrid_ensemble_layer1_scaler.pkl'))
+    layer1_ocsvm = joblib.load(os.path.join(export_dir, 'hybrid_ensemble_layer1_ocsvm.pkl'))
+    layer1_if = joblib.load(os.path.join(export_dir, 'hybrid_ensemble_layer1_if.pkl'))
+    layer2_xgb = joblib.load(os.path.join(export_dir, 'hybrid_ensemble_layer2_xgb.pkl'))
+    optimal_thresholds = joblib.load(os.path.join(export_dir, 'hybrid_ensemble_thresholds.pkl'))
     print("     [>] Scaler, Layer 1 (OCSVM&IF), and Layer 2 (XGBoost) and Thresholds successfully loaded.")
-    #with open(os.path.join(export_dir, 'p_threshold.txt'), 'r') as f:
-     #   best_thresh = float(f.read().strip())
-    #print(f"     [>] Threshold locked at: {best_thresh:.2f}")
 except FileNotFoundError:
     print(f"    [!] ERROR: Model files not found in '{export_dir}/'.")
-    print("     Please run '5_hybrid_n_ensemble.py' first to generate the .pkl files.")
+    print("     Please run '5_hybrid_ensemble.py' first to generate the .pkl files.")
     sys.exit()
 
 ################################################
-# 3. TRACE-DRIVEN SIMULATION ENGINE (Section 4.5)
+# 3. TRACE-DRIVEN SIMULATION ENGINE (Section 3.5)
 ################################################
 def run_simulation(scenario_name, batch_size, iterations=10):
     """
@@ -110,7 +107,7 @@ def run_simulation(scenario_name, batch_size, iterations=10):
         ocsvm_scores = layer1_ocsvm.decision_function(batch_scaled)
         if_scores = layer1_if.decision_function(batch_scaled)
 
-        # Data Augmentation (Dimensionality 13 -> 15)
+        # Data Augmentation (Dimensionality 10 -> 12)
         batch_meta = batch_df.copy()
         batch_meta['OCSVM_Score'] = ocsvm_scores
         batch_meta['IF_Score'] = if_scores
@@ -203,8 +200,8 @@ else:
 import matplotlib.pyplot as plt
 import os
 
-arch_name = "Alternative Hybrid N Ensemble"
-file_prefix = "hn" 
+arch_name = "Hybrid Ensemble"
+file_prefix = "hybrid_ensemble" 
 vis_dir = "visualisations"
 os.makedirs(vis_dir, exist_ok=True)
 print(f"\n[+] Generating Scalability Visualizations in '{vis_dir}/'...")
