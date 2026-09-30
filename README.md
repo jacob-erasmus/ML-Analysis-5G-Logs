@@ -1,4 +1,3 @@
-incomplete... still working on this
 # Machine Learning-Based Analysis of High-Volume 5G Network Logs
 This repository contains the code and experimental data for my BSc(Hons) research project in Computer Science at the University of Pretoria.
 ### Author: Jacob Erasmus
@@ -32,9 +31,9 @@ The repository is organised to separate the final deployable prototype from the 
     pip install -r requirements.txt
     '''
 ### 3. Dataset:
-Due to file size limitations, the full training and testing sets ('logs_80percent.csv' and 'logs_20percent.csv') are not hosted directly in this repo. Ensure these files are placed in the root directory. These files can be found here: ....
+Due to file size limitations, the full dataset, training and testing sets ('logs.csv', 'logs_80percent.csv' and 'logs_20percent.csv') are not hosted directly in this repo. Ensure these files are placed in the root directory. These files can be found here: ....
 
-## Running the Prototype
+## Running the Prototype (Recommended Execution)
 ### 1. Training & Inference:
 To execute the final architecture, run the ensemble script. This will load the data, execute the parallel meta-feature generation, perform the recall-constrained grid search to lock the optimal scalar, and output the final normalised predictions.
 
@@ -53,5 +52,6 @@ To verify the $O(n)$ linear scaling and hardware latency metrics detailed in the
     
 **Expected Output:** The terminal will display the simulation of the various 5G network conditions, outputting the Mean Inference Latency (t), Throughput (EPS) and a final Stability Ratio to verify linear scaling under a volumetric flood.
 
+### Note: For full replication: run file 1-3 prior to above steps.
 
 
