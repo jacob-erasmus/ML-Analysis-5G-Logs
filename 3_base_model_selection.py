@@ -154,7 +154,7 @@ for train_index, val_index in skf.split(X, y):
         prec = precision_score(y_val_fold, y_pred, average='macro', zero_division=0)
         rec = recall_score(y_val_fold, y_pred, average='macro', zero_division=0)
         f1 = f1_score(y_val_fold, y_pred, average='macro', zero_division=0)
-        print(f"        Accuracy: {acc:.4f} | F1-Score: {f1:.4f}")
+        print(f"        Accuracy: {acc:.4f} | Precision: {prec:.4f} | Recall: {rec:.4f} | F1-Score: {f1:.4f}")
 
     #####################################################
     # F. UNSUPERVISED BENCHMARKING (Section 3.3.2)
@@ -199,7 +199,9 @@ for train_index, val_index in skf.split(X, y):
 
         acc = accuracy_score(y_val_binary, y_pred_binary)
         f1 = f1_score(y_val_binary, y_pred_binary, zero_division=0)
-        print(f"        Accuracy: {acc:.4f} | F1-Score: {f1:.4f}")
+        prec = precision_score(y_val_binary, y_pred_binary, zero_division=0)
+        rec = recall_score(y_val_binary, y_pred_binary, zero_division=0)
+        print(f"        Accuracy: {acc:.4f} | Precision: {prec:.4f} | Recall: {rec:.4f} | F1-Score: {f1:.4f}")
 
     print(f"\n--- FOLD {fold_no} COMPLETELY FINISHED ---")
     fold_no += 1
