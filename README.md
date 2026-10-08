@@ -7,7 +7,7 @@ This repository contains the code and experimental data for my BSc(Hons) researc
 ## Project Overview
 > **Full Report:** [Read the research report here]()
 
-This research develops a scalable, hybrid ensemble machine learning framework designed for processing 5G logs. The finalised constraint-driven normalised framework utilises a parallel meta-feature extraction layer (OCSVM and Isolation Forest) and an XGBoost inference engine. The framework employs a continous beta normalisation loop driven by a Neyman-Pearson contrained hyperparameter search (set to maximise Macro Recall while bounding Precision $\ge 0.81$). 
+This research develops a scalable, hybrid ensemble machine learning framework designed for processing 5G logs. The framework utilises a parallel meta-feature extraction layer (OCSVM and Isolation Forest) and an XGBoost inference engine. The framework employs a continous beta normalisation loop driven by a Neyman-Pearson constraint (set to maximise Macro Recall while bounding Precision $\ge 0.81$). 
 
 ### Methodology Overview
 
@@ -45,13 +45,13 @@ To execute the final architecture, run the ensemble script. This will load the d
 **Expected Output:** The terminal will display the constrained threshold optimisation process, output the final forensic benchmarking metrics (namely Accuracy, Precision, Recall, F1-Score) and the deterministic baseline, export the models to 'final_framework/', and save a confusion matrix to the 'visualisations/' folder.
 
 ### 2. Operational Scalability Assessment
-To verify the $O(n)$ linear scaling and hardware latency metrics detailed in the report, execute the scalability assessment. This script streams variable physical log batches (from 5,000 to 1,000,000 logs) through the deployed framework.
+To verify the scaling and hardware latency metrics detailed in the report, execute the scalability assessment. This script streams variable physical log batches (from 5,000 to 1,000,000 logs) through the deployed framework.
 
     '''bash
     python 6_scalability_assessment.py
     '''
     
-**Expected Output:** The terminal will display the simulation of the various 5G network conditions, outputting the Mean Inference Latency (t), Throughput (EPS) and a final Stability Ratio to verify linear scaling under a volumetric flood.
+**Expected Output:** The terminal will display the simulation of the various 5G network conditions, outputting the Mean Inference Latency (t), Throughput (EPS) and a final Stability Ratio to verify scaling under a volumetric flood.
 
 ### Note: For full replication: run files 1-4 prior to above steps.
 
