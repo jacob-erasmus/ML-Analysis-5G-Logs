@@ -288,8 +288,30 @@ winning_base_ratios = base_ratios[row_indices, best_attack_classes]
 
 final_predictions = np.where(winning_base_ratios >= 1.0, best_attack_classes, 0)
 
+###################################
+# 8. FORENSIC EVIDENCE PRESERVATION
+###################################
+print("\n[+] Preserving Forensic Evidence...")
+
+# grab indices of every log classifed as attack
+anomolous_indices = np.where(final_predictions > 0)[0]
+
+# extract only the forensically relevant artefacts from the raw test data
+forensic_artefacts = df_test.iloc[anomolous_indices].copy()
+
+# model's predicted attack class and ratio added to exported evidence
+forensic_artefacts['Predicted_Attack_Class'] = final_predictions[anomolous_indices]
+forensic_artefacts['Confidence_Base_Ratio'] = winning_base_ratios[anomolous_indices]
+
+# preserve the evidence by exporting to timestamped CSV
+timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+export_filename = f"forensic_triage_artefacts_{timestamp}.csv"
+
+forensic_artefacts.to_csv(export_filename, index=False)
+print(f"[!] Evidence Preserved: {len(forensic_artefacts)} artefacts exported to '{export_filename}'.")
+
 ##########################################################
-# 7. DETERMINISTIC RULESET BASELINE
+# 9. DETERMINISTIC RULESET BASELINE
 ##########################################################
 print("[+] Executing Deterministic Ruleset Baseline...")
 
@@ -321,7 +343,7 @@ else:
     print("[!] No volumetric metrics found. Skipping baseline.")
 
 ###################################
-# 8. FORENSIC BENCHMARKING RESULTS
+# 10. FORENSIC BENCHMARKING RESULTS
 ###################################
 print("\n==================================================")
 print("           FINAL BENCHMARKING RESULTS             ")
@@ -359,7 +381,7 @@ print(f"F1-Score (Macro): {rule_f1:.4f}")
 print("==================================================")
 
 ##############################
-# 9. EXPORT DEPLOYED FRAMEWORK 
+# 11. EXPORT DEPLOYED FRAMEWORK 
 ##############################
 export_dir = "final_framework"
 print("\n[+] Exporting Hybrid w/Normalisation ML Ensemble Model for Deployed Framework which will be used for Scalability Validation to '{export_dir}/' directory...")
@@ -371,7 +393,7 @@ joblib.dump(final_optimal_thresholds, os.path.join(export_dir, 'hybrid_ensemble_
 print("     [>] Scaler, Layer 1, Layer 2, and Thresholds succuessfully saved to disk.")
 
 ################################
-# 10. Confusion Matrix generation
+# 12. Confusion Matrix generation
 ################################
 v_directory = "visualisations"
 os.makedirs(v_directory, exist_ok=True)
