@@ -89,35 +89,43 @@ X_test_final = X_test[golden_features]
 # 3. LAYER 1: PARALLEL META-FEATURE GENERATION
 ##############################################
 print("\n[+] Initalising Layer 1 (OSCVM & Isolation Forest Parallel Processing)...")
-# Step 3A: Train Unsupervised Models on Normal Traffic
-# Leakage Prevention: Layer 1 must map the geometry of normal traffic only.
-X_train_normal = X_train_final[y_train == 0]
+# Step 3A: Split the 80% training set into a subtrain and validation
+X_subtrain_raw, X_valid_raw, y_subtrain, y_valid = train_test_split(
+    X_train_final, y_train, test_size=0.20, stratify=y_train, random_state=42
+)
+
+# Step 3B: Train Unsupervised Models only on subtrainNormal Traffic
+X_subtrain_normal = X_subtrain_raw[y_subtrain == 0]
 
 layer1_scaler = StandardScaler()
-X_train_normal_scaled = layer1_scaler.fit_transform(X_train_normal)
+X_subtrain_normal_scaled = layer1_scaler.fit_transform(X_subtrain_normal)
 
-# Scale the full datasets for Layer 1 scoring
-X_train_full_scaled = layer1_scaler.transform(X_train_final)
+# Scale subtrain, validation, annd test sets using the subtrain fitted scaler
+X_subtrain_scaled = layer1_scaler.transform(X_subtrain_raw)
+X_valid_scaled = layer1_scaler.transform(X_valid_raw)
 X_test_full_scaled = layer1_scaler.transform(X_test_final)
 
-# Train Nystroem OCSV (Captures boundary distance)
+# Train Nystroem OCSV (Captures boundary distance) on subtrain normal only
 print("     -> Mapping spatial boundaries via Nystrom OCSVM...")
 layer1_ocsvm = make_pipeline(
     Nystroem(kernel='rbf', gamma=None, n_components=300, random_state=42),
     SGDOneClassSVM(nu=0.20, random_state=42)
 )
-layer1_ocsvm.fit(X_train_normal_scaled)
+layer1_ocsvm.fit(X_subtrain_normal_scaled)
 
-# Train Isolation Forest (Captures tree-based isolation depth)
+# Train Isolation Forest (Captures tree-based isolation depth) on subtrain normal only
 print("     -> Mapping structural depth via Isolation Forest...")
 layer1_if = IsolationForest(n_estimators=100, contamination=0.20, random_state=42, n_jobs=-1)
-layer1_if.fit(X_train_normal_scaled)
+layer1_if.fit(X_subtrain_normal_scaled)
 
-# Step 3B: Extract Continuous Anomaly Decision Scores instead of binary flags(The Meta-Features)
+# Step 3C: Extract Continuous Anomaly Decision Scores for all 3 splits
 # decision_function() returns a continous float. Negative = Anomaly, Positive = Normal
-print("    -> Extracting continuous anomaly decision scores for the entire vault...")
-train_scores_ocsvm = layer1_ocsvm.decision_function(X_train_full_scaled)
-train_scores_if = layer1_if.decision_function(X_train_full_scaled)
+print("    -> Extracting continuous anomaly decision scores...")
+subtrain_scores_ocsvm = layer1_ocsvm.decision_function(X_subtrain_scaled)
+subtrain_scores_if = layer1_if.decision_function(X_subtrain_scaled)
+
+valid_scores_ocsvm = layer1_ocsvm.decision_function(X_valid_scaled)
+valid_scores_if = layer1_if.decision_function(X_valid_scaled)
 
 test_scores_ocsvm = layer1_ocsvm.decision_function(X_test_full_scaled)
 test_scores_if = layer1_if.decision_function(X_test_full_scaled)
@@ -127,10 +135,14 @@ test_scores_if = layer1_if.decision_function(X_test_full_scaled)
 ################
 print("\n[+] Expanding Dimensionality with Unsupervised Meta-Features...")
 # Concatenate the 2 unsupervised continous scores onto the golden Features.
-# XGBoost would then have 12 dimensions to look at, allowing better understanding of threat severity with topological context.
-X_train_meta = X_train_final.copy()
-X_train_meta['OCSVM_Score'] = train_scores_ocsvm
-X_train_meta['IF_Score'] = train_scores_if
+# XGBoost would then have 12 dimensions to look at
+X_subtrain= X_subtrain_raw.copy()
+X_subtrain['OCSVM_Score'] = subtrain_scores_ocsvm
+X_subtrain['IF_Score'] = subtrain_scores_if
+
+X_valid = X_valid_raw.copy()
+X_valid['OCSVM_Score'] = valid_scores_ocsvm
+X_valid['IF_Score'] = valid_scores_if
 
 X_test_meta = X_test_final.copy()
 X_test_meta['OCSVM_Score'] = test_scores_ocsvm
@@ -141,12 +153,7 @@ X_test_meta['IF_Score'] = test_scores_if
 #############################################
 print("\n[+] Re-initiating Normalisation Architecture...")
 
-# 1. Strict Validation Split for Leakage-Free Threshold Discovery
-X_subtrain, X_valid, y_subtrain, y_valid = train_test_split(
-    X_train_meta, y_train, test_size=0.20, stratify=y_train, random_state=42
-)
-
-# 2. Pure Log-Smoothed Weights (No Manual Heuristics)
+# 1. Pure Log-Smoothed Weights 
 print("    -> Calculating pure logarithmic weights to anchor class boundaries...")
 class_counts = y_subtrain.value_counts()
 majority_count = class_counts.max()
