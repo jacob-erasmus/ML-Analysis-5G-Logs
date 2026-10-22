@@ -32,7 +32,7 @@ The repository is organised as:
     pip install -r requirements.txt
     '''
 ### 3. Dataset:
-Due to file size limitations, the full dataset, training and testing sets ('logs.csv', 'logs_80percent.csv' and 'logs_20percent.csv') are not hosted directly in this repo. Ensure these files are placed in the root directory. These files can be found here: ....
+Due to file size limitations, the full dataset, training and testing sets ('logs.csv', 'logs_80percent.csv' and 'logs_20percent.csv') are not hosted directly in this repo. Ensure these files are placed in the root directory. These files can be found here: https://drive.google.com/drive/folders/1Xr8Zp8MmdZblDBT2JxLDCQsApVH6q79b?usp=sharing
 
 ## Running the Prototype (Recommended Execution)
 ### 1. Training & Inference:
