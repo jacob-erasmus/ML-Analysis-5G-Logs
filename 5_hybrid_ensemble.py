@@ -17,6 +17,7 @@ import joblib
 import os
 import matplotlib.pyplot as plt
 import seaborn as sns
+import time
 from sklearn.ensemble import IsolationForest
 from sklearn.utils import compute_class_weight
 from xgboost import XGBClassifier
@@ -24,7 +25,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.kernel_approximation import Nystroem
 from sklearn.linear_model import SGDOneClassSVM
 from sklearn.pipeline import make_pipeline
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, fbeta_score
+from sklearn.metrics import accuracy_score, classification_report, precision_score, recall_score, f1_score, fbeta_score
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix
 
@@ -329,17 +330,21 @@ volumetric_metrics = [
     'Total Length of Bwd Packets'
 ]
 
-rule_predictions = np.zeros(len(X_test), dtype=int)
 available_metrics = [m for m in volumetric_metrics if m in X_train.columns]
 
 if available_metrics:
-    print(f"    -> Applying 99th percentile static thresholds for: {available_metrics}")
+    print(f"    -> Calculating 99th percentile static thresholds on normal training traffic for: {available_metrics}")
+    rule_thresholds = {
+        metric: X_train[y_train == 0][metric].quantile(0.99)
+        for metric in available_metrics
+    }
+    
+    # Time strictly the baseline inference on the 20% test set
+    t0_rule = time.perf_counter()
+    rule_predictions = np.zeros(len(X_test), dtype=int)
     for metric in available_metrics:
-        # Extract the 99th percentile threshold from strictly normal training traffic
-        threshold = X_train[y_train == 0][metric].quantile(0.99)
-        # If any test log exceeds this specific threshold, flag it as an anomaly (1)
-        # The bitwise OR (|) ensures that tripping ANY rule flags the log
-        rule_predictions = rule_predictions | (X_test[metric] > threshold).astype(int)
+        rule_predictions = rule_predictions | (X_test[metric] > rule_thresholds[metric]).astype(int)
+    time_rule = time.perf_counter() - t0_rule
         
     rule_binary_truth = (y_test != 0).astype(int)
     rule_acc = accuracy_score(rule_binary_truth, rule_predictions)
@@ -348,7 +353,8 @@ if available_metrics:
     rule_f1 = f1_score(rule_binary_truth, rule_predictions, average='macro', zero_division=0)
 else:
     print("[!] No volumetric metrics found. Skipping baseline.")
-
+    time_rule = 0.0
+    
 ###################################
 # 10. FORENSIC BENCHMARKING RESULTS
 ###################################
@@ -367,24 +373,115 @@ he_m_prec = precision_score(y_test, final_predictions, average='macro', zero_div
 he_m_rec = recall_score(y_test, final_predictions, average='macro', zero_division=0)
 he_m_f1 = f1_score(y_test, final_predictions, average='macro', zero_division=0)
 
+# 2-Class Binary Macro Hybrid Ensemble Metrics (for direct comparison with Ruleset)
+he_binary_preds = (final_predictions != 0).astype(int)
+he_bin_acc = accuracy_score(rule_binary_truth, he_binary_preds)
+he_bin_prec = precision_score(rule_binary_truth, he_binary_preds, average='macro', zero_division=0)
+he_bin_rec = recall_score(rule_binary_truth, he_binary_preds, average='macro', zero_division=0)
+he_bin_f1 = f1_score(rule_binary_truth, he_binary_preds, average='macro', zero_division=0)
 
-print("--- Hybrid w/Normalisation ML ENSEMBLE (WEIGHTED AVERAGE) ---")
+print("--- Hybrid Ensemble (15-CLASS WEIGHTED AVERAGE) ---")
 print(f"Accuracy:         {he_acc:.4f}")
 print(f"Precision:        {he_w_prec:.4f}")
 print(f"Recall:           {he_w_rec:.4f}")
-print(f"F1-Score: {he_w_f1:.4f}")
+print(f"F1-Score:         {he_w_f1:.4f}")
 
-print("--- Hybrid w/Normalisatio ML ENSEMBLE (MACRO AVERAGE) ---")
+print("\n--- Hybrid Ensemble (15-CLASS MACRO AVERAGE) ---")
 print(f"Accuracy:         {he_acc:.4f}")
 print(f"Precision:        {he_m_prec:.4f}")
 print(f"Recall:           {he_m_rec:.4f}")
 print(f"F1-Score (Macro): {he_m_f1:.4f}")
 
-print("\n--- DETERMINISTIC BASELINE ---")
+print("\n--- Hybrid Ensemble (2-CLASS BINARY MACRO AVERAGE) ---")
+print(f"Accuracy:         {he_bin_acc:.4f}")
+print(f"Precision:        {he_bin_prec:.4f}")
+print(f"Recall:           {he_bin_rec:.4f}")
+print(f"F1-Score (Macro): {he_bin_f1:.4f}")
+
+print("\n--- DETERMINISTIC BASELINE (2-CLASS BINARY MACRO) ---")
 print(f"Accuracy:         {rule_acc:.4f}")
 print(f"Precision:        {rule_prec:.4f}")
 print(f"Recall:           {rule_rec:.4f}")
 print(f"F1-Score (Macro): {rule_f1:.4f}")
+print(f"Inference Time:   {time_rule:.4f} s")
+
+# Per-Class Breakdown & Confusion Matrix Reconciliation
+print("\n--- 15-CLASS PER-CLASS PERFORMANCE REPORT ---")
+print(classification_report(y_test, final_predictions, digits=4, zero_division=0))
+
+cfm = confusion_matrix(y_test, final_predictions)
+tn_bin = cfm[0, 0]
+fp_bin = cfm[0, 1:].sum()
+fn_bin = cfm[1:, 0].sum()
+tp_bin = cfm[1:, 1:].sum()
+exact_attack_tp = np.trace(cfm[1:, 1:])
+cross_attack_err = tp_bin - exact_attack_tp
+
+print("--- CONFUSION MATRIX ERROR RECONCILIATION ---")
+print(f"Total Test Partition Records : {cfm.sum():,}")
+print(f"Binary TN (Benign -> Benign) : {tn_bin:,} ({tn_bin/(tn_bin+fp_bin)*100:.2f}% of Benign)")
+print(f"Binary FP (Benign -> Attack) : {fp_bin:,} ({fp_bin/(tn_bin+fp_bin)*100:.2f}% of Benign)")
+print(f"Binary FN (Attack -> Benign) : {fn_bin:,} ({fn_bin/(tp_bin+fn_bin)*100:.2f}% of Attacks)")
+print(f"Binary TP (Attack -> Attack) : {tp_bin:,} (Exact Class Match: {exact_attack_tp:,} | Cross-Attack Misattribution: {cross_attack_err:,})")
+
+##########################################################
+# 10B. ABLATION STUDY: STANDALONE 10-FEATURE XGBOOST
+##########################################################
+import time
+
+print("\n[+] Executing Ablation Study (Standalone 10-Feature XGBoost vs. 12-Dim Hybrid)...")
+
+# 1. Train Standalone XGBoost on the 10 RFE features using identical hyperparameters and weights
+xgb_standalone = XGBClassifier(
+    max_depth=9, 
+    learning_rate=0.1000998503939086,
+    n_estimators=181, 
+    subsample=0.9826605267054558, 
+    max_delta_step=5,       
+    min_child_weight=0.001, 
+    eval_metric='mlogloss', 
+    random_state=42, 
+    n_jobs=-1
+)
+xgb_standalone.fit(X_subtrain_raw, y_subtrain, sample_weight=custom_weights)
+
+# 2. Time Standalone XGBoost Inference (10 Features, Standard Argmax)
+t0_standalone = time.perf_counter()
+y_pred_standalone = xgb_standalone.predict(X_test_final)
+time_standalone = time.perf_counter() - t0_standalone
+
+# 3. Time Complete Hybrid Ensemble Inference (10 -> 12 Dims, Normalised Inference)
+t0_hybrid = time.perf_counter()
+X_test_scaled_ablation = layer1_scaler.transform(X_test_final)
+s_ocsvm_ablation = layer1_ocsvm.decision_function(X_test_scaled_ablation)
+s_if_ablation = layer1_if.decision_function(X_test_scaled_ablation)
+
+X_test_meta_ablation = X_test_final.copy()
+X_test_meta_ablation['OCSVM_Score'] = s_ocsvm_ablation
+X_test_meta_ablation['IF_Score'] = s_if_ablation
+
+probs_ablation = layer2_xgb.predict_proba(X_test_meta_ablation)
+ratios_ablation = np.zeros_like(probs_ablation)
+for cls in range(1, 15):
+    ratios_ablation[:, cls] = probs_ablation[:, cls] / final_optimal_thresholds[cls]
+
+best_cls_ablation = np.argmax(ratios_ablation[:, 1:], axis=1) + 1
+win_ratios_ablation = ratios_ablation[np.arange(len(y_test)), best_cls_ablation]
+y_pred_hybrid_ablation = np.where(win_ratios_ablation >= 1.0, best_cls_ablation, 0)
+time_hybrid = time.perf_counter() - t0_hybrid
+
+# 4. Compute Standalone Metrics & Memory Footprints
+ab_acc = accuracy_score(y_test, y_pred_standalone)
+ab_prec = precision_score(y_test, y_pred_standalone, average='macro', zero_division=0)
+ab_rec = recall_score(y_test, y_pred_standalone, average='macro', zero_division=0)
+ab_f1 = f1_score(y_test, y_pred_standalone, average='macro', zero_division=0)
+
+mem_10_mb = X_test_final.memory_usage(deep=True).sum() / (1024 ** 2)
+mem_12_mb = X_test_meta.memory_usage(deep=True).sum() / (1024 ** 2)
+
+print("\n--- ABLATION COMPARISON (20% UNSEEN TEST SET) ---")
+print(f"Standalone XGBoost (10 Feats) | Acc: {ab_acc:.4f} | Macro Prec: {ab_prec:.4f} | Macro Rec: {ab_rec:.4f} | Macro F1: {ab_f1:.4f} | RAM: {mem_10_mb:.2f} MB | Time: {time_standalone:.4f} s")
+print(f"Hybrid Ensemble    (12 Dims)  | Acc: {he_acc:.4f} | Macro Prec: {he_m_prec:.4f} | Macro Rec: {he_m_rec:.4f} | Macro F1: {he_m_f1:.4f} | RAM: {mem_12_mb:.2f} MB | Time: {time_hybrid:.4f} s")
 print("==================================================")
 
 ##############################

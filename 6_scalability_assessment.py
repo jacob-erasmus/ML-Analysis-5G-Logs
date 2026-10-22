@@ -30,7 +30,7 @@ def optimise_memory(df):
 
     int_cols = df.select_dtypes(include=['int64']).columns
     for col in int_cols:
-        if df[col].max() <= 127 and df[col].min() >= 128:
+        if df[col].max() <= 127 and df[col].min() >= -128:
             df[col] = df[col].astype('int8')
         else:
             df[col] = df[col].astype('int32')
@@ -135,13 +135,19 @@ def run_simulation(scenario_name, batch_size, iterations=10):
         cycle_latency = end_time - start_time
         latencies.append(cycle_latency)
 
-    # Calculate Core Metrics
+    # Calculate Core Metrics & Variability
     mean_latency = np.mean(latencies)
-    mean_eps = batch_size / mean_latency
+    std_latency = np.std(latencies, ddof=1)
+    min_latency = np.min(latencies)
+    max_latency = np.max(latencies)
 
-    print(f"    [>] Mean Inference Latency (t) : {mean_latency:.4f} seconds")
-    print(f"    [>] Throughput (EPS) : {mean_eps:.0f} events per second")
-    print(f"    [>] L1 Forwarding Load         : 100% (Layer 2 inspects all {batch_size:,} logs)")
+    iter_eps = [batch_size / l for l in latencies]
+    mean_eps = batch_size / mean_latency
+    std_eps = np.std(iter_eps, ddof=1)
+
+    print(f"    [>] Inference Latency (t) : {mean_latency:.4f} ± {std_latency:.4f} s (Min: {min_latency:.4f}s, Max: {max_latency:.4f}s)")
+    print(f"    [>] Throughput (EPS)      : {mean_eps:.0f} ± {std_eps:.0f} events per second")
+    print(f"    [>] L1 Forwarding Load    : 100% (Layer 2 inspects all {batch_size:,} logs)")
     
     return mean_latency, mean_eps
 
@@ -159,9 +165,9 @@ t_miot, eps_miot = run_simulation(
     iterations=20
 )
 
-# Condition 2: Control Plane Flooding: High velocity network spikes targeting NRF/AMF service requests
+# Condition 2: Control Plane Flooding: High velocity network spikes targeting NRF/UDR service requests
 t_flood, eps_flood = run_simulation(
-    scenario_name="Control Plane Flooding (NRF/AMF Targeting)",
+    scenario_name="Control Plane Flooding (NRF/UDR Targeting)",
     batch_size=1000000,
     iterations=20
 )

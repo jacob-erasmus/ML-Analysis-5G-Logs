@@ -4,9 +4,8 @@ Author: Jacob Erasmus
 Project: Honours Research Project
 Purpose: Executes the inital data ingestion, memory downcasting, and stratified dataset spilliting to establish isolated training and test sets.
 Alignment with Methodology: 
-    - Section 3.1: Initial Data Ingestion.
-    - Section 3.2.1: Memory Optimisation and Datatype Downcasting.
-    - Section 3.2.2: 80/20 Stratified Dataset Partitioning.
+    - Section 4.2.1: Memory Optimisation and Datatype Downcasting.
+    - Section 4.2.2: 80/20 Stratified Dataset Partitioning.
 """
 
 import pandas as pd
@@ -31,6 +30,17 @@ except MemoryError:
     print("CRITICAL: Out of Memory Error during initial load. Switch to chunking.")
     sys.exit()
 
+print("\n--- Dataset Composition & Class Distribution ---")
+if 'Label' in df_raw.columns:
+    class_counts = df_raw['Label'].value_counts()
+    for attack_class, count in class_counts.items():
+        percentage = (count / df_raw.shape[0]) * 100
+        print(f"- {attack_class}: {count:,} ({percentage:.2f}%)")
+
+print("\n--- Synthetic Artefact & Duplicate Audit ---")
+duplicates = df_raw.duplicated().sum()
+duplicate_percent = (duplicates / df_raw.shape[0]) * 100
+print(f"Exact Duplicate Records: {duplicates:,} ({duplicate_percent:.2f}%)")
 ############################# 
 # STEP 1.2: DEEP MEMORY AUDIT
 #############################
