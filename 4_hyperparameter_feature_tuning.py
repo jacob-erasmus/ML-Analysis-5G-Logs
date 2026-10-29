@@ -1,19 +1,15 @@
 """
-4_hyperparameter_feature_tuning.py
+File: 4_hyperparameter_feature_tuning.py
 Author: Jacob Erasmus
-Project: Honours Research Project 
-Purpose: Executes the discovery phase to lock the Golden Features (the best features to use) and optimal hyperparameters. 
-         This script is run once to establish the mathematical constants used in the final ensemble. 
+Project: BSc(Hons) Computer Science Research Project (University of Pretoria)
+Purpose: Executes global feature space selection (IF -> RFECV) on the 80% training partition to identify the optimal feature subset (10 features), and performs 5-fold RandomizedSearchCV to tune the Layer 2 XGBoost hyperparameters. 
 Alignment with Methodology:
-    - Section 3.2.1: Memory Optimisation and Dataype Downcasting.
-    - Section 3.2.2: Stratified 5-Fold Cross-Validation.
-    - Section 3.2.3: Information Gain filtering.
-    - Section 3.2.4: Recursive Feature Elimination (RFE)
-    - Section 3.2.5: Cost-Sensitive Learning (Logarithmic Smoothing).
-    - Section 3.3: Hybrid Ensemble Hyperparameter and Feature Space Tuning
+    - Chapter 3 (Step 2): Memory Optimisation and Dataype Downcasting.
+    - Chapter 3 (Step 4 & 5): Information Gain Filtering and Cross-Validated RFE (RFECV).
+    - Chapter 3 (Step 6): Logarithmic Cost-Sensitive Sample Weighting
+    - Chapter 3 (Step 9): Hyperparamter and Feature Space Tuning
 """
 import os
-
 import pandas as pd
 import numpy as np
 from sklearn.feature_selection import mutual_info_classif, RFE
@@ -31,22 +27,20 @@ from imblearn.pipeline import Pipeline as ImbPipeline
 
 warnings.filterwarnings("ignore")
 
-print("======================")
-print("--- FULL TUNING ---")
-print("======================")
+print("====================================================================")
+print(" STEP 9: GLOBAL FEATURE SELECTION (RFECV) AND HYPERPARAMETER TUNING ")
+print("====================================================================")
 
-###############################################
-# 1. LOAD AND DOWNCAST THE DATA (Section 3.2.1)
-###############################################
-print("[+] Loading 80%Training Vault...")
+#################################################
+# 1. LOAD AND DOWNCAST THE 80% TRAINING PARTITION
+#################################################
+print("[+] Loading 80% training partition ('logs_80percent.csv')...")
 df_train = pd.read_csv("logs_80percent.csv")
 
-print("    -> Executing Memory Optimisation & Downcasting (Sec 3.2.1)...")
-# Downcast continuous floats to 32-bit to prevent RAM exhaustion during RFE
+print("    -> Applying datatype downcasting...")
 float_cols = df_train.select_dtypes(include=['float64']).columns
 df_train[float_cols] = df_train[float_cols].astype('float32')
 
-# Downcast binary flags and counters to minimal integer states
 int_cols = df_train.select_dtypes(include=['int64']).columns
 for col in int_cols:
     if df_train[col].max() <= 127 and df_train[col].min() >= -128:
@@ -54,32 +48,29 @@ for col in int_cols:
     else:
         df_train[col] = df_train[col].astype('int32')
 
-# Drop the column
 X_train = df_train.drop(columns=['LabelEnc'])
 y_train = df_train['LabelEnc']
+print(f"    [>] Training partition ready: {X_train.shape[0]:,} records, {X_train.shape[1]} features.")
 
-print(f"    [>] Ingested full training vault: {X_train.shape[0]} rows, {X_train.shape[1]} features.")
+##############################################
+# 2. TWO STAGE FEATURE SELECTION (IG -> RFECV)
+##############################################
+print("\n[+] Executing Feature Selection (IG -> RFE)...")
 
-########################################################
-# 2. OPTIMIsED FEATURE SELECTION (Section 3.2.3 & 3.2.4)
-########################################################
-print("\n[+] Executing Global Feature Selection (IG -> RFE)...")
-
-# Step 2A: Information Gain (Entropy) (section 3.2.3)
-print("    -> Calculating IG entropy...")
+# Step 2A: Information Gain (Mutual Information) Filtering
+print("    -> Computing IG scores across all features...")
 ig_scores = mutual_info_classif(X_train, y_train, random_state=42)
 ig_series = pd.Series(ig_scores, index=X_train.columns)
-# Prune completely noisy features to accelrate the processing
 top_50_features = ig_series.sort_values(ascending=False).head(50).index.tolist()
-
 X_train_ig = X_train[top_50_features]
+print(f"    -> Retained top {len(top_50_features)} highest entropy features for RFECV.")
 
-# Step 2B: Recursive Feature Elimination (section 3.2.4)
-print("    -> Executing Recursive Feature Elimination with 5-Fold CV")
+# Step 2B: Cross-Validated Recursive Feature Elimination (RFECV)
+print("    -> Executing RFECV with 5-Fold Stratified Cross-Validation (scoring='f1_macro')...")
 rf_estimator = RandomForestClassifier(n_estimators=50, max_depth=10, class_weight='balanced', random_state=42, n_jobs=1)
 cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
-# Execute RFECV. 'scoring=f1_macro' ensures the Random Forest heavily peanlises feature sets that ignore minority zero-day attacks during the pruning process.
+# Unweighted macro F1 scoring ensures feature subsets are evaluated across all 15 classes equally
 rfecv = RFECV(
     estimator=rf_estimator,
     step=2, 
@@ -90,16 +81,15 @@ rfecv = RFECV(
 )
 rfecv.fit(X_train_ig, y_train)
 
-# the algorithm will automatically find the optimal number of features
 optimal_num = rfecv.n_features_
 golden_features = X_train_ig.columns[rfecv.support_].tolist()
 X_train_final = X_train_ig[golden_features]
 
-print(f"\n    [>] RFE Cross-Validation Complete. Mathematical optimum found at: {optimal_num} features.")
-print(f"    [>] GOLDEN FEATURE LIST TO COPY TO ENSEMBLE SCRIPT:")
+print(f"\n    [>] RFECV Complete. Optimal dimensionality identified: {optimal_num} features.")
+print(f"    [>] Selected 10-Feature Subset:")
 print(f"        {golden_features}")
 
-# Step 2C: Generate the Ablation Study Graph for reference
+# Step 2C: Save RFECV Dimensionality vs Macro F1-Score Curve
 v_directory = "visualisations"
 os.makedirs(v_directory, exist_ok=True)
 plt.figure(figsize=(10, 6))
@@ -112,30 +102,26 @@ plt.grid(True)
 plt.tight_layout()
 plt.savefig(os.path.join(v_directory, 'rfe_curve.png'), dpi=300)
 plt.close()
-print("    [>] Feature elimination curve saved as 'rfe_curve.png'.")
+print("    [>] RFECV performance curve saved to 'visualisations/rfe_curve.png'.")
+
 ##############################################################
-# 3. LAYER 1: UNSUPERVISED (OCSVM) JUSTIFICATION (section 3.3.2)
+# 3. LAYER 1: UNSUPERVISED PARAMETER SPECIFICATION
 ##############################################################
-print("\n[+] Layer 1 (OCSVM) Parameter Evaluation...")
-print("    -> 'nu' parameter locked at 0.20 (Derived mathematically from EDA 19.7% anomaly rate).")
-print("    -> 'n_components' locked at 300 (Hardware/Time-Complexity ceiling).")
-print("    [>] Layer 1 parameters empirically optimised. Skipping automated CV.")
+print("\n[+] Verifying Layer 1 Unsupervised Parameter Configuration...")
+print("    -> OCSVM 'nu' and Isolation Forest 'contamination' set to 0.20 (calibrated to 19.70 empirical anomaly rate).")
+print("    -> Nystroem kernel approximation 'n_components' set to 300.")
 
-#######################################################
-# 4. TUNE LAYER 2: SUPERVISED HYPERPARAMETERS (XGBoost)
-#######################################################
-print("\n[+] Initiating RandomizedSearchCV for Layer 2 (XGBoost)...")
+########################################################
+# 4. LAYER 2: SUPERVISED HYPERPARAMETER TUNING (XGBoost)
+########################################################
+print("\n[+] Executing RandomizedSearchCV for Layer 2 Classifier (XGBoost)...")
 
-
-# 2. Pure Log-Smoothed Weights
-print("    -> Calculating pure logarithmic weights...")
+print("    -> Computing logarithmic cost-sensitive sample weights...")
 class_counts = y_train.value_counts()
 majority_count = class_counts.max()
 smoothed_weights = {
     cls: np.log1p(majority_count / count) + 1 for cls, count in class_counts.items()
 }
-
-# Apply weights to the training labels
 sample_weights_log = np.array([smoothed_weights[cls] for cls in y_train])
 
 xgb_model = XGBClassifier(eval_metric='mlogloss', max_delta_step=5, min_child_weight=0.001, random_state=42, n_jobs=-1)
@@ -144,7 +130,7 @@ param_dist_xgb = {
     'max_depth': randint(8, 16),
     'learning_rate': uniform(0.01, 0.2),
     'n_estimators': randint(50, 200),
-    'subsample': uniform(0.7, 0.3) # Prevents overfitting by sampling data rows per tree
+    'subsample': uniform(0.7, 0.3)
 }
 
 macro_f1_scorer = make_scorer(f1_score, average='macro', zero_division=0)
@@ -159,13 +145,12 @@ random_search_xgb = RandomizedSearchCV(
     n_jobs=-1
 )
 
-print("    -> Searching for optimal hyperparameters...")
+print("    -> Fitting 5-Fold RandomizedSearchCV (n_iter=15) across selected feature subset...")
 random_search_xgb.fit(X_train_final, y_train, sample_weight=sample_weights_log)
 
+print(f"\n    [>] Optimal Layer 2 Hyperparameters: {random_search_xgb.best_params_}")
+print(f"    [>] Best 5-Fold Cross-Validation Macro F1-Score: {random_search_xgb.best_score_:.4f}")
 
-print(f"\n    [>] Layer 2 Golden Parameters: {random_search_xgb.best_params_}")
-print(f"    [>] Layer 2 Best Tuning F1-Score: {random_search_xgb.best_score_:.4f}")
-
-print("\n==================================================")
-print(" TUNING COMPLETE. READY FOR ENSEMBLE INTEGRATION. ")
-print("==================================================")
+print("\n=======================================================")
+print(" FEATURE SELECTION AND HYPERPARAMETER TUNING COMPLETE. ")
+print("=======================================================")

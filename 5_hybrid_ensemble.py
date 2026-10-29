@@ -1,15 +1,15 @@
 """
-5_hybrid_ensemble.py
+File: 5_hybrid_ensemble.py
 Author: Jacob Erasmus
-Project: Honours Research Project
-Purpose: Implements the hybrid ensemble model. This architecture utilises a parallel hybrid ensemble where Layer 1 (OCSVM & IF) acts
-         as a topological feature extractor. Layers 2 (XGBoost) processes all the traffic as no logs dropped in layer 1, it uses a recall-constrained
-         hyperparameter grid search and continous beta normalisation to classify the imbalance 5G network states mathematically.
-Alignment with Methodology:
-    - Section 3.2.1: Ingestion an dmemory optimisation via datatype downcasting.
-    - Section 3.3.2 & 3.3.3: Implementation of selected algorithms (XGBoost, OCSVM were champions, and Isolation Forest was another candiate)
-    - Section 3.4: Comparative Forensic Analysis
-    - Section 3.3 & 3.5: Modeal serialisation and export for Scalability Assessment
+Project: BSc(Hons) Computer Science Research Project (University of Pretoria)
+Purpose: Implements and evaluates the two layer Constraint-Driven Normalised Hybrid Ensemble.
+         Layer 1 (Nystroem OCSVM and Isolation Forest) extracts continuous anomaly meta-features, expanding the RFE features into a 12-dimensional input space.
+         Layer 2 (cost-sensitive XGBoost) applies Neyman-Pearson threshold optimsation and probability normalisation to classify 5G telemetry, export forensic triage artfeacts, benchmark against a determinstic baseline and a standalone XGBoost ablation baseline, and serialise the deployed framework. 
+Alignment with Methodology and Discussion:
+    - Chapter 3 (Step 10a): Layer 1 Unsupervised Meta-Feature Extraction
+    - Chapter 3 (Step 10b): Layer 2 Supervised Classification & Neyman-Pearson Thresholding.
+    - Chapter 3 (Step 10c): Probability Normalisation and Forensic Artefact Export
+    - Chapter 3 (Step 11) & Chapter 4 (section 4.2): Comparative Foresnic Analysis, Per-Class Evaluation, Deterministic Baseline and Standalone XGBoost Abaltion Study
 """
 import pandas as pd
 import numpy as np
@@ -33,15 +33,15 @@ import warnings
 
 warnings.filterwarnings("ignore") 
 
-print("=============================")
-print("--- HYBRID ENSEMBLE ---   ")
-print("=============================")
+print("======================================================================")
+print(" CONSTRAINT-DRIVEN NORMALISED HYBRID ENSEMBLE TRAINING & EVALUATION ")
+print("====================================================================")
 
-#############################################
-# 1. LOAD & DOWNCAST THE DATA (Section 3.2.1)
-#############################################
+####################################################
+# 1. LOAD & DOWNCAST TRAINING AND TESTING PARTITIONS
+####################################################
 def optimize_memory(df):
-    """Restores Sec 3.2.1 datatype downcasting lost during CSV export."""
+    """Reapplies datatype downcasting following CSV ingestion."""
     float_cols = df.select_dtypes(include=['float64']).columns
     df[float_cols] = df[float_cols].astype('float32')
     
@@ -53,22 +53,22 @@ def optimize_memory(df):
             df[col] = df[col].astype('int32')
     return df
 
-print("[+] Loading and Optimising 80% Training Vault...")
+print("[+] Loading and optimising 80% training partition ('logs_80percent.csv')...")
 df_train = pd.read_csv("logs_80percent.csv")
 df_train = optimize_memory(df_train)
 X_train = df_train.drop(columns=['LabelEnc'])
 y_train = df_train['LabelEnc']
 
-print("[+] Loading and Optimising 20% Testing Vault (Unseen Data)...")
+print("[+] Loading and optimising unseen 20% test partition ('logs_20percent.csv')...")
 df_test = pd.read_csv("logs_20percent.csv") 
 df_test = optimize_memory(df_test)
 X_test = df_test.drop(columns=['LabelEnc'])
 y_test = df_test['LabelEnc']
 
-###################################################################
-# 2. GOLDEN FEATURES (DERIVED FROM TUNING SCRIPT)
-###################################################################
-print("\n[+] Loading 10 Golden Features")
+#########################################################
+# 2. APPLY SELECTED 10-FEATURE SUBSET (FROM STEP 9 RFECV)
+#########################################################
+print("\n[+] Filtering partitions to the 10 RFECV selected features")
 
 golden_features = [
     'Total Length of Bwd Packets', 
@@ -86,42 +86,42 @@ golden_features = [
 X_train_final = X_train[golden_features]
 X_test_final = X_test[golden_features]
 
-##############################################
-# 3. LAYER 1: PARALLEL META-FEATURE GENERATION
-##############################################
-print("\n[+] Initalising Layer 1 (OSCVM & Isolation Forest Parallel Processing)...")
-# Step 3A: Split the 80% training set into a subtrain and validation
+##################################################
+# 3. LAYER 1: UNSUPERVISED META-FEATURE EXTRACTION
+##################################################
+print("\n[+] Initalising Layer 1 Unsupervised Meta-Feature Extraction...")
+
+# Step 3A: Partition the 80% training data into sub-training (80%) and validation holdout (20%)
 X_subtrain_raw, X_valid_raw, y_subtrain, y_valid = train_test_split(
     X_train_final, y_train, test_size=0.20, stratify=y_train, random_state=42
 )
 
-# Step 3B: Train Unsupervised Models only on subtrainNormal Traffic
+# Step 3B: Isolate benign sub-training records (Class 0) to fit the Layer 1 scaler and models
 X_subtrain_normal = X_subtrain_raw[y_subtrain == 0]
 
 layer1_scaler = StandardScaler()
 X_subtrain_normal_scaled = layer1_scaler.fit_transform(X_subtrain_normal)
 
-# Scale subtrain, validation, annd test sets using the subtrain fitted scaler
+# Transform sub-training, validation, and unseen test partitions using the benign fitted scaler
 X_subtrain_scaled = layer1_scaler.transform(X_subtrain_raw)
 X_valid_scaled = layer1_scaler.transform(X_valid_raw)
 X_test_full_scaled = layer1_scaler.transform(X_test_final)
 
-# Train Nystroem OCSV (Captures boundary distance) on subtrain normal only
-print("     -> Mapping spatial boundaries via Nystrom OCSVM...")
+# Fit Nystroem OCSVM on benign sub-training records
+print("     -> Fitting Nystroem One-Class SVM (n_components=300, nu=0.20) on benign sub-training traffic...")
 layer1_ocsvm = make_pipeline(
     Nystroem(kernel='rbf', gamma=None, n_components=300, random_state=42),
     SGDOneClassSVM(nu=0.20, random_state=42)
 )
 layer1_ocsvm.fit(X_subtrain_normal_scaled)
 
-# Train Isolation Forest (Captures tree-based isolation depth) on subtrain normal only
-print("     -> Mapping structural depth via Isolation Forest...")
+# Fit Isolation Forest on benign sub-training records
+print("     -> Fitting Isolation Forest (n_estimators=100, nu=0.20) on benign sub-training traffic...")
 layer1_if = IsolationForest(n_estimators=100, contamination=0.20, random_state=42, n_jobs=-1)
 layer1_if.fit(X_subtrain_normal_scaled)
 
-# Step 3C: Extract Continuous Anomaly Decision Scores for all 3 splits
-# decision_function() returns a continous float. Negative = Anomaly, Positive = Normal
-print("    -> Extracting continuous anomaly decision scores...")
+# Step 3C: Extract Continuous Anomaly Decision Scores across all partitions
+print("    -> Extracting continuous decision_function() scores (OCSVM_Score and IF_Score)...")
 subtrain_scores_ocsvm = layer1_ocsvm.decision_function(X_subtrain_scaled)
 subtrain_scores_if = layer1_if.decision_function(X_subtrain_scaled)
 
@@ -131,12 +131,10 @@ valid_scores_if = layer1_if.decision_function(X_valid_scaled)
 test_scores_ocsvm = layer1_ocsvm.decision_function(X_test_full_scaled)
 test_scores_if = layer1_if.decision_function(X_test_full_scaled)
 
-################
-# 4. DATA MERGE
-################
-print("\n[+] Expanding Dimensionality with Unsupervised Meta-Features...")
-# Concatenate the 2 unsupervised continous scores onto the golden Features.
-# XGBoost would then have 12 dimensions to look at
+################################################
+# 4. FEATURE SPACE EXPANSION (10->12 DIMENSIONS)
+################################################
+print("\n[+] Appending Layer 1 continuous meta-features (expanding input space from 10 to 12 dimensions)...")
 X_subtrain= X_subtrain_raw.copy()
 X_subtrain['OCSVM_Score'] = subtrain_scores_ocsvm
 X_subtrain['IF_Score'] = subtrain_scores_if
@@ -150,12 +148,11 @@ X_test_meta['OCSVM_Score'] = test_scores_ocsvm
 X_test_meta['IF_Score'] = test_scores_if
 
 #############################################
-# 5. SINGLE-STAGE ENGINE (PURE LOG-SMOOTHING)
+# 5. LAYER 2: COST-SENSITIVE XGBOOST TRAINING
 #############################################
-print("\n[+] Re-initiating Normalisation Architecture...")
+print("\n[+] Training Layer 2 Cost-Sensitive XGBoost Classifier...")
 
-# 1. Pure Log-Smoothed Weights 
-print("    -> Calculating pure logarithmic weights to anchor class boundaries...")
+print("    -> Computing logarithmic cost-sensitive sample weights on sub-training split...")
 class_counts = y_subtrain.value_counts()
 majority_count = class_counts.max()
 smoothed_weights = {
@@ -163,8 +160,7 @@ smoothed_weights = {
 }
 custom_weights = np.array([smoothed_weights[cls] for cls in y_subtrain])
 
-print("    -> Training Baseline XGBoost Engine...")
-# The hyperparameters below were derived from the RandomizedSearchCV in 4_hyperparameter_feature_tuning.py
+print("    -> Fitting XGBoost classifier with tune hyperparameters on 12-dimensional sub-training set...")
 layer2_xgb = XGBClassifier(
     max_depth=9, 
     learning_rate=0.1000998503939086,
@@ -177,16 +173,16 @@ layer2_xgb = XGBClassifier(
     n_jobs=-1
 )
 layer2_xgb.fit(X_subtrain, y_subtrain, sample_weight=custom_weights)
-##############################################
-# 6. RECALL-CONSTRAINED GRID SEARCH
-##############################################
 
-print("\n[+] Initiating Recall-Constrained Hyperparameter Grid Search...")
-print("    -> Objective: Maximize Macro Recall while strictly bounding Precision >= 81%...")
+#####################################################
+# 6. NEYMAN-PEARSON THRESHOLD OPTIMISATION (STEP 10B)
+#####################################################
+print("\n[+] Executing Neyman-Pearson Threshold Optimisation on Validation Holdout...")
+print("    -> Objective: Maximize Macro Recall subject to Macro Precision >= 0.8100")
 
 y_valid_probs = layer2_xgb.predict_proba(X_valid)
 
-# 1. Establish the pure geometric boundaries for Continuous Beta
+# Compute logarithmic class-rarity severity indices I_c in [0,1] for classes 1..14
 attack_volumes = [(y_valid == cls).sum() for cls in range(1, 15)]
 valid_volumes = [v for v in attack_volumes if v > 0]
 V_max = max(valid_volumes)
@@ -200,13 +196,12 @@ for cls in range(1, 15):
     else:
         severity_indices[cls] = 1.0
 
-# Micro-Resolution Array captures sub-1% probabilities
+# Micro-Resolution threshold arar (108 candidate values from 0.001 to 0.99)
 fine_thresholds = np.concatenate([
     np.arange(0.001, 0.01, 0.001), 
     np.arange(0.01, 1.00, 0.01)
 ])
 
-# The Search Space for the Severity Scalar
 severity_scalars = [0.0, 0.25, 0.50, 0.75, 1.0, 1.25, 1.50, 1.75, 2.0]
 
 best_global_scalar = 0.0
@@ -216,7 +211,7 @@ final_optimal_thresholds = {}
 for scalar in severity_scalars:
     temp_thresholds = {}
     
-    # A. Calculate optimal thresholds for this specific scalar
+    # A. Identify class-specific thresholds maximising F_beta for the current scalar
     for cls in range(1, 15):
         y_valid_binary = (y_valid == cls).astype(int)
         if y_valid_binary.sum() == 0:
@@ -236,7 +231,7 @@ for scalar in severity_scalars:
                 best_thresh = thresh
         temp_thresholds[cls] = best_thresh
 
-    # B. Simulate Pure Normalised Inference on Validation Holdout
+    # B. Evaluate normalised probabilities ratios across the validation holdout
     base_ratios_valid = np.zeros_like(y_valid_probs)
     for cls in range(1, 15):
         base_ratios_valid[:, cls] = y_valid_probs[:, cls] / temp_thresholds[cls]
@@ -247,23 +242,21 @@ for scalar in severity_scalars:
     
     valid_predictions = np.where(winning_ratios_valid >= 1.0, best_attack_valid, 0)
     
-    # C. Evaluate against targets (Recall > 80, Precision > 81)
+    # C. Verify Neyman-Person precision floor (Macro Precision >= 0.8100)
     temp_macro_prec = precision_score(y_valid, valid_predictions, average='macro', zero_division=0)
     temp_macro_rec = recall_score(y_valid, valid_predictions, average='macro', zero_division=0)
     
-    print(f"    -> Tested Scalar: {scalar:.2f} | Valid Precision: {temp_macro_prec:.4f} | Valid Recall: {temp_macro_rec:.4f}")
+    print(f"    -> Candidate Scalar: {scalar:.2f} | Validation Macro Precision: {temp_macro_prec:.4f} | Validation Macro Recall: {temp_macro_rec:.4f}")
     
-    # Strictly enforce the Precision boundary while hunting for maximum Recall
     if temp_macro_prec >= 0.8100 and temp_macro_rec > best_valid_macro_recall:
         best_valid_macro_recall = temp_macro_rec
         best_global_scalar = scalar
         final_optimal_thresholds = temp_thresholds
 
-# Failsafe: If no scalar maintained 81% precision, default to scalar 0.0 (Pure F1)
+# Fallback to unweighted F1 (scalar = 0.0) if precision constraint is not satisified
 if best_valid_macro_recall == 0.0:
-    print("    [!] Warning: Precision constraint could not be met. Defaulting to Scalar 0.0.")
+    print("    [!] Warning: Precision constraint not met. Defaulting to Scalar 0.0 (unweighted F1).")
     best_global_scalar = 0.0
-    # (Re-run scalar 0.0 logic to lock thresholds...)
     for cls in range(1, 15):
         y_valid_binary = (y_valid == cls).astype(int)
         best_metric, best_thresh = 0, 0.5
@@ -276,18 +269,17 @@ if best_valid_macro_recall == 0.0:
                     best_thresh = thresh
         final_optimal_thresholds[cls] = best_thresh
 
-print(f"\n    [>] Optimal Severity Scalar mathematically locked at: {best_global_scalar:.2f}")
+print(f"\n    [>] Optimal Severity Scalar locked at: {best_global_scalar:.2f}")
 
-#############################################
-# 7. NORMALISED INFERENCE (UNSEEN TEST VAULT)
-##############################################
-print("\n[+] Executing Normalised Inference on Unseen Test Vault...")
+#####################################################
+# 7. PROBABILITY NORMALISATION ON UNSEEN 20% TEST SET
+#####################################################
+print("\n[+] Executing Probability Normalisation Inference on Unseen 20% Test Partition...")
 y_test_probs = layer2_xgb.predict_proba(X_test_meta)
 
 base_ratios = np.zeros_like(y_test_probs)
 
 for cls in range(1, 15):
-    # Normalisation
     base_ratios[:, cls] = y_test_probs[:, cls] / final_optimal_thresholds[cls]
 
 best_attack_classes = np.argmax(base_ratios[:, 1:], axis=1) + 1
@@ -296,32 +288,28 @@ winning_base_ratios = base_ratios[row_indices, best_attack_classes]
 
 final_predictions = np.where(winning_base_ratios >= 1.0, best_attack_classes, 0)
 
-###################################
-# 8. FORENSIC EVIDENCE PRESERVATION
-###################################
-print("\n[+] Preserving Forensic Evidence...")
+##################################################
+# 8. FORENSIC TRIAGE ARTEFACT ISOLATION AND EXPORT
+##################################################
+print("\n[+] Exporting Flagged Forensic Triage Artefacts...")
 
-# grab indices of every log classifed as attack
 anomolous_indices = np.where(final_predictions > 0)[0]
-
-# extract only the forensically relevant artefacts from the raw test data
 forensic_artefacts = df_test.iloc[anomolous_indices].copy()
 
-# model's predicted attack class and ratio added to exported evidence
 forensic_artefacts['Predicted_Attack_Class'] = final_predictions[anomolous_indices]
 forensic_artefacts['Confidence_Base_Ratio'] = winning_base_ratios[anomolous_indices]
 
-# preserve the evidence by exporting to timestamped CSV
 timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
 export_filename = f"forensic_triage_artefacts_{timestamp}.csv"
 
 forensic_artefacts.to_csv(export_filename, index=False)
-print(f"[!] Evidence Preserved: {len(forensic_artefacts)} artefacts exported to '{export_filename}'.")
+search_space_reduction = (1.0 - (len(forensic_artefacts) / len(df_test))) * 100
+print(f"    [>] Export complete: {len(forensic_artefacts):,} records written to '{export_filename}' ({search_space_reduction:.2f}% search space reduction).")
 
-##########################################################
-# 9. DETERMINISTIC RULESET BASELINE
-##########################################################
-print("[+] Executing Deterministic Ruleset Baseline...")
+#################################################
+# 9. DETERMINISTIC VOLUMETRIC BASELINE (STEP 11A)
+#################################################
+print("\n[+] Executing Deterministic 99th-Percentile Volumetric Baseline...")
 
 volumetric_metrics = [
     'Flow Bytes/s', 
@@ -333,13 +321,12 @@ volumetric_metrics = [
 available_metrics = [m for m in volumetric_metrics if m in X_train.columns]
 
 if available_metrics:
-    print(f"    -> Calculating 99th percentile static thresholds on normal training traffic for: {available_metrics}")
+    print(f"    -> Computing 99th-percentile thresholds on benign training records for: {available_metrics}")
     rule_thresholds = {
         metric: X_train[y_train == 0][metric].quantile(0.99)
         for metric in available_metrics
     }
     
-    # Time strictly the baseline inference on the 20% test set
     t0_rule = time.perf_counter()
     rule_predictions = np.zeros(len(X_test), dtype=int)
     for metric in available_metrics:
@@ -352,61 +339,57 @@ if available_metrics:
     rule_rec = recall_score(rule_binary_truth, rule_predictions, average='macro', zero_division=0)
     rule_f1 = f1_score(rule_binary_truth, rule_predictions, average='macro', zero_division=0)
 else:
-    print("[!] No volumetric metrics found. Skipping baseline.")
+    print("     [!] Warning: Required volumetric features not found. Skipping baseline evaluation.")
     time_rule = 0.0
     
-###################################
-# 10. FORENSIC BENCHMARKING RESULTS
-###################################
-print("\n==================================================")
-print("           FINAL BENCHMARKING RESULTS             ")
-print("==================================================")
+#######################################################
+# 10. COMPARATIVE FORENSIC ANALYSIS & PER-CLASS METRICS
+#######################################################
+print("\n===================================================================")
+print(" COMPARATIVE FORENSIC ANALYSIS RESULTS (20% UNSEEN TEST PARTITION) ")
+print("===================================================================")
 
-# Hybrid Ensemble Metrics
 he_acc = accuracy_score(y_test, final_predictions)
-# with weighted metrics
 he_w_prec = precision_score(y_test, final_predictions, average='weighted', zero_division=0)
 he_w_rec = recall_score(y_test, final_predictions, average='weighted', zero_division=0)
 he_w_f1 = f1_score(y_test, final_predictions, average='weighted', zero_division=0)
-# with macro metrics
+
 he_m_prec = precision_score(y_test, final_predictions, average='macro', zero_division=0)
 he_m_rec = recall_score(y_test, final_predictions, average='macro', zero_division=0)
 he_m_f1 = f1_score(y_test, final_predictions, average='macro', zero_division=0)
 
-# 2-Class Binary Macro Hybrid Ensemble Metrics (for direct comparison with Ruleset)
 he_binary_preds = (final_predictions != 0).astype(int)
 he_bin_acc = accuracy_score(rule_binary_truth, he_binary_preds)
 he_bin_prec = precision_score(rule_binary_truth, he_binary_preds, average='macro', zero_division=0)
 he_bin_rec = recall_score(rule_binary_truth, he_binary_preds, average='macro', zero_division=0)
 he_bin_f1 = f1_score(rule_binary_truth, he_binary_preds, average='macro', zero_division=0)
 
-print("--- Hybrid Ensemble (15-CLASS WEIGHTED AVERAGE) ---")
-print(f"Accuracy:         {he_acc:.4f}")
-print(f"Precision:        {he_w_prec:.4f}")
-print(f"Recall:           {he_w_rec:.4f}")
-print(f"F1-Score:         {he_w_f1:.4f}")
+print("--- Hybrid Ensemble (15-Class Unweighted Macro Average) ---")
+print(f"Global Accuracy     : {he_acc:.4f}")
+print(f"Macro Precision     : {he_m_prec:.4f}")
+print(f"Macro Recall        : {he_m_rec:.4f}")
+print(f"Macro F1-Score      : {he_m_f1:.4f}")
 
-print("\n--- Hybrid Ensemble (15-CLASS MACRO AVERAGE) ---")
-print(f"Accuracy:         {he_acc:.4f}")
-print(f"Precision:        {he_m_prec:.4f}")
-print(f"Recall:           {he_m_rec:.4f}")
-print(f"F1-Score (Macro): {he_m_f1:.4f}")
+print("\n--- Hybrid Ensemble (15-Class Weighted Average) ---")
+print(f"Global Accuracy     : {he_acc:.4f}")
+print(f"Weighted Precision  : {he_w_prec:.4f}")
+print(f"Weighted Recall     : {he_w_rec:.4f}")
+print(f"Weighted F1-Score   : {he_w_f1:.4f}")
 
-print("\n--- Hybrid Ensemble (2-CLASS BINARY MACRO AVERAGE) ---")
-print(f"Accuracy:         {he_bin_acc:.4f}")
-print(f"Precision:        {he_bin_prec:.4f}")
-print(f"Recall:           {he_bin_rec:.4f}")
-print(f"F1-Score (Macro): {he_bin_f1:.4f}")
+print("\n--- Hybrid Ensemble (2-Class Binary Macro Average) ---")
+print(f"Binary Accuracy     : {he_bin_acc:.4f}")
+print(f"Macro Precision     : {he_bin_prec:.4f}")
+print(f"Macro Recall        : {he_bin_rec:.4f}")
+print(f"Macro F1-Score      : {he_bin_f1:.4f}")
 
-print("\n--- DETERMINISTIC BASELINE (2-CLASS BINARY MACRO) ---")
-print(f"Accuracy:         {rule_acc:.4f}")
-print(f"Precision:        {rule_prec:.4f}")
-print(f"Recall:           {rule_rec:.4f}")
-print(f"F1-Score (Macro): {rule_f1:.4f}")
-print(f"Inference Time:   {time_rule:.4f} s")
+print("\n--- Deterministic Volumetric Baseline (2-Class Binary Macro Average) ---")
+print(f"Binary Accuracy     : {rule_acc:.4f}")
+print(f"Macro Precision     : {rule_prec:.4f}")
+print(f"Macro Recall        : {rule_rec:.4f}")
+print(f"Macro F1-Score      : {rule_f1:.4f}")
+print(f"Inference Time      : {time_rule:.4f} s")
 
-# Per-Class Breakdown & Confusion Matrix Reconciliation
-print("\n--- 15-CLASS PER-CLASS PERFORMANCE REPORT ---")
+print("\n--- 15-Class Per-Class Performance Breakdown ---")
 print(classification_report(y_test, final_predictions, digits=4, zero_division=0))
 
 cfm = confusion_matrix(y_test, final_predictions)
@@ -417,19 +400,19 @@ tp_bin = cfm[1:, 1:].sum()
 exact_attack_tp = np.trace(cfm[1:, 1:])
 cross_attack_err = tp_bin - exact_attack_tp
 
-print("--- CONFUSION MATRIX ERROR RECONCILIATION ---")
+print("--- Confusion Matrix Binary vs Multi-Class Error Reconciliation ---")
 print(f"Total Test Partition Records : {cfm.sum():,}")
 print(f"Binary TN (Benign -> Benign) : {tn_bin:,} ({tn_bin/(tn_bin+fp_bin)*100:.2f}% of Benign)")
 print(f"Binary FP (Benign -> Attack) : {fp_bin:,} ({fp_bin/(tn_bin+fp_bin)*100:.2f}% of Benign)")
 print(f"Binary FN (Attack -> Benign) : {fn_bin:,} ({fn_bin/(tp_bin+fn_bin)*100:.2f}% of Attacks)")
 print(f"Binary TP (Attack -> Attack) : {tp_bin:,} (Exact Class Match: {exact_attack_tp:,} | Cross-Attack Misattribution: {cross_attack_err:,})")
 
-##########################################################
+####################################################
 # 10B. ABLATION STUDY: STANDALONE 10-FEATURE XGBOOST
-##########################################################
+####################################################
 import time
 
-print("\n[+] Executing Ablation Study (Standalone 10-Feature XGBoost vs. 12-Dim Hybrid)...")
+print("\n[+] Executing Ablation Study (Standalone 10-Feature XGBoost vs. 12-Dimension Hybrid Ensemble)...")
 
 # 1. Train Standalone XGBoost on the 10 RFE features using identical hyperparameters and weights
 xgb_standalone = XGBClassifier(
@@ -470,7 +453,7 @@ win_ratios_ablation = ratios_ablation[np.arange(len(y_test)), best_cls_ablation]
 y_pred_hybrid_ablation = np.where(win_ratios_ablation >= 1.0, best_cls_ablation, 0)
 time_hybrid = time.perf_counter() - t0_hybrid
 
-# 4. Compute Standalone Metrics & Memory Footprints
+# 4. Compute ablation metrics and dataframe Memory Footprints
 ab_acc = accuracy_score(y_test, y_pred_standalone)
 ab_prec = precision_score(y_test, y_pred_standalone, average='macro', zero_division=0)
 ab_rec = recall_score(y_test, y_pred_standalone, average='macro', zero_division=0)
@@ -479,26 +462,28 @@ ab_f1 = f1_score(y_test, y_pred_standalone, average='macro', zero_division=0)
 mem_10_mb = X_test_final.memory_usage(deep=True).sum() / (1024 ** 2)
 mem_12_mb = X_test_meta.memory_usage(deep=True).sum() / (1024 ** 2)
 
-print("\n--- ABLATION COMPARISON (20% UNSEEN TEST SET) ---")
+print("\n--- Ablation Comparison on Unseen 20% Test Partition (566,149 Records) ---")
 print(f"Standalone XGBoost (10 Feats) | Acc: {ab_acc:.4f} | Macro Prec: {ab_prec:.4f} | Macro Rec: {ab_rec:.4f} | Macro F1: {ab_f1:.4f} | RAM: {mem_10_mb:.2f} MB | Time: {time_standalone:.4f} s")
 print(f"Hybrid Ensemble    (12 Dims)  | Acc: {he_acc:.4f} | Macro Prec: {he_m_prec:.4f} | Macro Rec: {he_m_rec:.4f} | Macro F1: {he_m_f1:.4f} | RAM: {mem_12_mb:.2f} MB | Time: {time_hybrid:.4f} s")
 print("==================================================")
 
-##############################
-# 11. EXPORT DEPLOYED FRAMEWORK 
-##############################
+#############################################
+# 11. SERIALISE AND EXPORT DEPLOYED FRAMEWORK 
+#############################################
 export_dir = "final_framework"
-print("\n[+] Exporting Hybrid w/Normalisation ML Ensemble Model for Deployed Framework which will be used for Scalability Validation to '{export_dir}/' directory...")
+os.makedirs(export_dir, exist_ok=True)
+print("\n[+] Serialising trained Hybrid Ensemble componets to '{export_dir}/'...")
+
 joblib.dump(layer1_scaler, os.path.join(export_dir, 'hybrid_ensemble_layer1_scaler.pkl'))
 joblib.dump(layer1_ocsvm, os.path.join(export_dir, 'hybrid_ensemble_layer1_ocsvm.pkl'))
 joblib.dump(layer1_if, os.path.join(export_dir, 'hybrid_ensemble_layer1_if.pkl'))
 joblib.dump(layer2_xgb, os.path.join(export_dir, 'hybrid_ensemble_layer2_xgb.pkl'))
 joblib.dump(final_optimal_thresholds, os.path.join(export_dir, 'hybrid_ensemble_thresholds.pkl'))
-print("     [>] Scaler, Layer 1, Layer 2, and Thresholds succuessfully saved to disk.")
+print("     [>] Layer 1 scaler, OCSVM, Isolation Forest, Layer 2 XGBoost, and thresholds saved to disk.")
 
-################################
+#################################
 # 12. Confusion Matrix generation
-################################
+#################################
 v_directory = "visualisations"
 os.makedirs(v_directory, exist_ok=True)
 
@@ -512,7 +497,7 @@ plt.xlabel('Predicted Class', fontsize=12)
 plt.tight_layout()
 plt.savefig(os.path.join(v_directory, 'hybrid_ensemble_confusion_matrix.png'), dpi=300)
 plt.close()
-print("     [>] 'hybrid_ensemble_confusion_matrix.png' saved.")
+print("     [>] Saved 'visulisations/hybrid_ensemble_confusion_matrix.png'.")
 
 
 

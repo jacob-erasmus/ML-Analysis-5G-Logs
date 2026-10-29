@@ -1,10 +1,12 @@
 """
-6_scalability_assessment.py
+File: 6_scalability_assessment.py
 Author: Jacob Erasmus
-Project: UP Honours Research
-Purpose: Executes the operational scalability assessment for the deployed framework. Simulates variable velocity 5G network conditions to measure throughput (EPS),
-         inference latency (t), and stability.
-Alignment with Methodology: Section 3.5
+Project: BSc(Hons) Computer Science Researcg Project (University of Pretoria)
+Purpose: Executes the operational scalability assessment for the deployed framework. Across three simulated 5G batch buffer sizes (N = 5000,N = 250,000, and N = 1,000,000 across K = 20 repetitions per scenario) to
+         evaluate inference latency, throughput (EPS), and empirical time complexity.
+Methodology & Discussion Alignment:
+    - Chapter 3 (Step 12): Operational Scalability Assessment Protocol.
+    - Chapter 4 (Section 4.3): Operational Scalability Assessment and O(n) Verification.
 """
 
 import pandas as pd
@@ -16,15 +18,15 @@ import os
 import warnings
 warnings.filterwarnings("ignore")
 
-print("============================================")
-print(" --- OPERATIONAL SCALABILITY ASSESSMENT --- ")
-print("============================================")
+print("===============================================")
+print(" STEP 12: OPERATIONAL SCALABILITY ASSESSMENT ")
+print("=============================================")
 
 #############################################
 # 1. TRACE-DRIVEN STREAM: LOAD FULL DATASET
 #############################################
 def optimise_memory(df):
-    """Executes the Memory Optimisation and Downcasting Block."""
+    """Applies dataype downcasting to match deployed feature represenetaitons."""
     float_cols = df.select_dtypes(include=['float64']).columns
     df[float_cols] = df[float_cols].astype('float32')
 
@@ -60,7 +62,7 @@ golden_features = [
 ]
 
 X_full_stream = df_full[golden_features]
-print(f"    [>] Stream Ready: Pool of {X_full_stream.shape[0]:,} 5G logs available.")
+print(f"    [>] Telemetry Ready: {X_full_stream.shape[0]:,} records restricted to 10 core features.")
 
 #############################
 # 2. LOAD DEPLOYED FRAMEWORK
@@ -78,23 +80,23 @@ try:
 except FileNotFoundError:
     print(f"    [!] ERROR: Model files not found in '{export_dir}/'.")
     print("     Please run '5_hybrid_ensemble.py' first to generate the .pkl files.")
-    sys.exit()
+    sys.exit(1)
 
-################################################
-# 3. TRACE-DRIVEN SIMULATION ENGINE (Section 3.5)
-################################################
+###################################
+# 3. TRACE-DRIVEN BATCH SIMULATION
+###################################
 def run_simulation(scenario_name, batch_size, iterations=10):
     """
-    Simulates streaming ingestion from the 5G network.
-    Tests the precise hardware latency of the deployed framework.
+    Measures in-memory inference latency and throughput across K repetitions
+    for a specified batch buffer size N.
     """
-    print(f"\n[+] Executing Scenario: {scenario_name}")
-    print(f"    -> Streaming Velocity: {batch_size} logs per physical buffer.")
+    print(f"\n[+] Scenario: {scenario_name}")
+    print(f"    -> Buffer Size (N): {batch_size:,} records | Repetitions (K): {iterations}")
 
     latencies = []
 
     for i in range(iterations):
-        # Extract a random, unsorted batch of raw traffic from the dataset
+        # sample batch outside the timed inference block
         batch_df = X_full_stream.sample(n=batch_size, replace=True, random_state=42+i)
 
         ################################
@@ -102,7 +104,7 @@ def run_simulation(scenario_name, batch_size, iterations=10):
         ################################
         start_time = time.perf_counter()
 
-        # Layer 1: Scaling and parallel distance mapping
+        # Layer 1: Feauture standardistaiton and continous anomaly score extraction
         batch_scaled = layer1_scaler.transform(batch_df)
         ocsvm_scores = layer1_ocsvm.decision_function(batch_scaled)
         if_scores = layer1_if.decision_function(batch_scaled)
@@ -154,9 +156,9 @@ def run_simulation(scenario_name, batch_size, iterations=10):
 ###########################################
 # 4. EXECUTING THE THREE TRAFFIC CONDITIONS
 ###########################################
-print("\n=========================================")
-print(" ---SIMULATING 5G NETWORK CONDITIONS--- ")
-print("========================================")
+print("\n----------------------------------------------------------------------")
+print(" EXECUTING TRACE-DRIVEN 5G BATCH SCALABILITY SCENARIOS (K = 20 RUNS)  ")
+print("----------------------------------------------------------------------")
 
 # Condition 1: mIoT Synchronised Access: Simulating massive simultaneous device registrations
 t_miot, eps_miot = run_simulation(
@@ -179,12 +181,12 @@ t_base, eps_base = run_simulation(
     iterations=20
 )
 
-#####################
-# 5. COMPLEXITY PROOF
-#####################
-print("\n===========================================")
-print(" ---STABILITY RATIO & O(n) VERIFICATION--- ")
-print("===========================================")
+####################################################
+# 5. STABILITY RATION AND EMPIRICAL SCALING SUMMARY
+####################################################
+print("\n======================================================================")
+print(" THROUGHPUT STABILITY RATIO AND EMPIRICAL O(n) SCALING SUMMARY        ")
+print("======================================================================")
 
 ratio_miot = eps_miot / eps_base
 ratio_flood = eps_flood / eps_base
@@ -193,16 +195,16 @@ print(f"Baseline EPS    : {eps_base:,.0f}")
 print(f"mIoT Load EPS    : {eps_miot:,.0f} (Ratio: {ratio_miot:.2f}x)")
 print(f"Flood Load EPS    : {eps_flood:,.0f} (Ratio: {ratio_flood:.2f}x)")
 
-print("\n ---O(n) Complexity Verdict--- ")
+print("\n--- Empirical Scaling Assessment --- ")
 if ratio_flood >= 0.80:
-    print("[SUCCESS] Deployed Framework exhibits near-perfect linear O(n) scaling.")
-    print("System absorbed 100% volumetric inspection without bottlenecking.")
-else: 
-    print("[WARNING] Non-linear bottlenecks detected under peak laod.\nLack of a L1 triage caused latency degradation")
+    print("[+] Result: Stability Ratio >= 0.80 verified. The framework exhibits linear O(n)")
+    print("    in-memory batch scaling across tested volumes up to 1,000,000 records.")
+else:
+    print("[!] Notice: Throughput degradation observed at peak batch volume (Ratio < 0.80).")
 
-##################################
-# 6. GRAPHS (Throughput & Latency)
-##################################
+##########################################################
+# 6. GENERATE SCALABILITY VISUALISATIONS
+##########################################################
 import matplotlib.pyplot as plt
 import os
 
